@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <meta name="color-scheme" content="dark" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:; media-src blob:; connect-src https://script.google.com https://*.googleusercontent.com; base-uri 'none'; form-action 'none'"
+    />
+    <title>Ausweis sicher scannen</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <script type="module" src="./scanner.js"></script>
+  </head>
+  <body>
+    <main id="app" class="app" aria-busy="true">
+      <section id="camera-stage" class="camera-stage" aria-label="Kamerabild">
+        <video id="camera" autoplay muted playsinline></video>
+        <div class="shade" aria-hidden="true"></div>
+        <div id="id-guide" class="id-guide is-red" aria-hidden="true">
+          <span class="corner top-left"></span>
+          <span class="corner top-right"></span>
+          <span class="corner bottom-left"></span>
+          <span class="corner bottom-right"></span>
+        </div>
+        <div id="countdown" class="countdown" aria-live="assertive"></div>
+        <header class="topbar">
+          <p class="brand">SICHERHEIT NORD</p>
+          <span id="side-label" class="side-label">Vorderseite · 1 von 2</span>
+        </header>
+        <div class="camera-copy">
+          <p id="instruction">Ausweis vollständig in den Rahmen halten.</p>
+          <p id="camera-status" class="camera-status" aria-live="polite">
+            Sichere Sitzung wird vorbereitet …
+          </p>
+        </div>
+        <button
+          id="start-camera"
+          class="primary start-camera"
+          type="button"
+          hidden
+        >
+          Kamera erlauben
+        </button>
+        <div class="pilot-note">
+          Pilotbetrieb – bitte nur mit freigegebenen Testdaten verwenden.
+        </div>
+      </section>
+
+      <section id="review" class="review" hidden aria-labelledby="review-title">
+        <div class="review-card">
+          <p class="brand blue">SICHERHEIT NORD</p>
+          <h1 id="review-title">Aufnahme prüfen</h1>
+          <img id="preview" alt="Vorschau der erfassten Ausweisseite" />
+          <p id="quality-message" class="quality-message"></p>
+          <label class="consent">
+            <input id="consent" type="checkbox" />
+            <span
+              >Alle Angaben sind vollständig lesbar. Ich stimme der Ausweiskopie
+              für den Einstellungsprozess zu.</span
+            >
+          </label>
+          <button id="use-capture" class="primary" type="button" disabled>
+            Aufnahme verwenden
+          </button>
+          <button id="repeat-capture" class="secondary" type="button">
+            Neu aufnehmen
+          </button>
+          <div id="upload-progress" class="progress" hidden>
+            <span></span>
+          </div>
+          <p id="review-status" class="review-status" aria-live="polite"></p>
+        </div>
+      </section>
+
+      <section id="fatal" class="fatal" hidden>
+        <div class="fatal-card">
+          <p class="brand blue">SICHERHEIT NORD</p>
+          <h1>Scan nicht möglich</h1>
+          <p id="fatal-message"></p>
+        </div>
+      </section>
+
+      <section id="complete" class="complete" hidden>
+        <div class="complete-card">
+          <div class="done-mark">✓</div>
+          <h1>Fertig</h1>
+          <p>
+            Vorder- und Rückseite wurden sicher übertragen. Sie können zum
+            Laptop zurückkehren.
+          </p>
+        </div>
+      </section>
+
+      <canvas id="analysis-canvas" hidden></canvas>
+      <canvas id="capture-canvas" hidden></canvas>
+    </main>
+  </body>
+</html>
