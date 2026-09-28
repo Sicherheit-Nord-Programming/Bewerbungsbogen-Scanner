@@ -14,4 +14,3 @@ externes OCR und keine Speicherung im Browser.
 Die automatische Prüfung bewertet ausschließlich technische Bildqualität wie
 Auflösung, Beleuchtung, Kontrast, Spiegelung und Schärfe. Sie rekonstruiert oder
 verändert keine Ausweisdaten.
-
