@@ -508,7 +508,33 @@ async function decodePhotoBlob(blob) {
   }
 }
 
-async function bestStillSource() {
+function captureVideoFrame() {
+  const width = elements.camera.videoWidth;
+  const height = elements.camera.videoHeight;
+  if (!width || !height) return null;
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext('2d', { alpha: false });
+  if (!context) {
+    canvas.width = 0;
+    canvas.height = 0;
+    return null;
+  }
+  context.drawImage(elements.camera, 0, 0, width, height);
+  return {
+    source: canvas,
+    width,
+    height,
+    close: () => {
+      canvas.width = 0;
+      canvas.height = 0;
+    },
+    kind: 'video',
+  };
+}
+
+async function bestStillSource(videoFallback) {
   const track = mediaStream?.getVideoTracks?.()[0];
   if (track && typeof window.ImageCapture === 'function') {
     try {
@@ -526,11 +552,13 @@ async function bestStillSource() {
         STILL_CAPTURE_TIMEOUT_MS,
         'Das Standbild konnte nicht schnell genug verarbeitet werden.',
       );
+      videoFallback?.close();
       return { ...decoded, kind: 'photo' };
     } catch {
       // iOS/Safari and some Android WebViews need the video-frame fallback.
     }
   }
+  if (videoFallback) return videoFallback;
   return {
     source: elements.camera,
     width: elements.camera.videoWidth,
@@ -558,7 +586,10 @@ async function canvasToJpeg(canvas) {
 }
 
 async function produceCapture(positionedBox) {
-  const still = await bestStillSource();
+  // Freeze the frame synchronously at the trigger boundary.  It remains the
+  // exact 3–2–1 image if ImageCapture needs to fall back after its timeout.
+  const videoFallback = captureVideoFrame();
+  const still = await bestStillSource(videoFallback);
   const canvas = elements.captureCanvas;
   let image = null;
   let temporaryCanvas = null;
