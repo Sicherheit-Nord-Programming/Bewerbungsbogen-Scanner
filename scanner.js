@@ -25,6 +25,11 @@ const VIDEO_FALLBACK_MIN_LONG_EDGE = 900;
 const VIDEO_FALLBACK_MIN_SHORT_EDGE = 560;
 const VIDEO_FALLBACK_MIN_SHARPNESS = 12;
 const VIDEO_FALLBACK_OUTPUT_LONG_EDGE = 1_600;
+// A native ImageCapture can wait for autofocus/exposure indefinitely on some
+// mobile browsers.  The live video frame is already available and is a safe,
+// immediate fallback once this short window has elapsed.
+const STILL_CAPTURE_TIMEOUT_MS = 900;
+const CAPTURE_VIBRATION_PATTERN = [80, 40, 120];
 
 const elements = Object.fromEntries(
   [
@@ -78,6 +83,7 @@ let retryPayload = null;
 let pendingConfirm = false;
 let busy = false;
 let expiryTimer = 0;
+let captureFeedbackTimer = 0;
 
 function setCameraMessage(instruction, status = '') {
   elements.instruction.textContent = instruction;
@@ -85,6 +91,9 @@ function setCameraMessage(instruction, status = '') {
 }
 
 function setGuide(valid) {
+  window.clearTimeout(captureFeedbackTimer);
+  captureFeedbackTimer = 0;
+  elements.idGuide.classList.remove('is-capture');
   elements.idGuide.classList.toggle('is-green', valid);
   elements.idGuide.classList.toggle('is-red', !valid);
 }
@@ -98,6 +107,31 @@ function setProgress(percent) {
 
 function wait(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+function withTimeout(promise, milliseconds, message) {
+  let timer = 0;
+  const timeout = new Promise((_, reject) => {
+    timer = window.setTimeout(() => reject(new Error(message)), milliseconds);
+  });
+  return Promise.race([promise, timeout]).finally(() => {
+    window.clearTimeout(timer);
+  });
+}
+
+function triggerCaptureFeedback() {
+  try {
+    if (typeof navigator.vibrate === 'function') {
+      navigator.vibrate(CAPTURE_VIBRATION_PATTERN);
+    }
+  } catch {
+    // Vibration is optional and is not available in every mobile browser.
+  }
+  elements.idGuide.classList.add('is-capture');
+  captureFeedbackTimer = window.setTimeout(() => {
+    captureFeedbackTimer = 0;
+    elements.idGuide.classList.remove('is-capture');
+  }, 320);
 }
 
 function stopAnalysis() {
@@ -416,7 +450,11 @@ function beginAnalysis() {
             'Der Rahmen wird grün, sobald der Ausweis richtig liegt.';
           elements.countdown.textContent = '';
         }
-        if (holdState.ready && observation.positioned && lastPositionedBox) {
+        // `updateHoldState` keeps a short grace window for one noisy camera
+        // frame.  Once the three seconds are complete, use the last stable
+        // box even if this exact frame briefly failed edge detection; waiting
+        // for another positioned frame was the source of late/missed shots.
+        if (holdState.ready && lastPositionedBox) {
           void captureAutomatically(lastPositionedBox);
           return;
         }
@@ -475,22 +513,18 @@ async function bestStillSource() {
   if (track && typeof window.ImageCapture === 'function') {
     try {
       const capture = new window.ImageCapture(track);
-      let settings;
-      try {
-        const capabilities = await capture.getPhotoCapabilities();
-        if (capabilities?.imageWidth?.max && capabilities?.imageHeight?.max) {
-          settings = {
-            imageWidth: capabilities.imageWidth.max,
-            imageHeight: capabilities.imageHeight.max,
-          };
-        }
-      } catch {
-        // Maximum still dimensions are optional; takePhoto chooses the best.
-      }
-      const decoded = await decodePhotoBlob(
-        settings
-          ? await capture.takePhoto(settings)
-          : await capture.takePhoto(),
+      // Do not wait indefinitely for autofocus/exposure or photo capabilities.
+      // If the native still is not ready almost immediately, the current video
+      // frame is used below so the 3–2–1 trigger always produces a capture.
+      const photoBlob = await withTimeout(
+        capture.takePhoto(),
+        STILL_CAPTURE_TIMEOUT_MS,
+        'Die Standbildaufnahme reagiert zu langsam.',
+      );
+      const decoded = await withTimeout(
+        decodePhotoBlob(photoBlob),
+        STILL_CAPTURE_TIMEOUT_MS,
+        'Das Standbild konnte nicht schnell genug verarbeitet werden.',
       );
       return { ...decoded, kind: 'photo' };
     } catch {
@@ -658,10 +692,13 @@ async function captureAutomatically(positionedBox) {
   state = 'capturing';
   stopAnalysis();
   setGuide(true);
+  // This happens synchronously at the end of the countdown, before any
+  // autofocus, decoding, quality analysis, or relay work can add latency.
+  triggerCaptureFeedback();
   elements.countdown.textContent = '';
   setCameraMessage(
-    'Aufnahme wird geprüft …',
-    'Bitte das Handy kurz ruhig halten.',
+    'Aufnahme wird erstellt …',
+    '3–2–1 abgeschlossen. Bitte das Handy kurz ruhig halten.',
   );
   try {
     const result = await produceCapture(positionedBox);
