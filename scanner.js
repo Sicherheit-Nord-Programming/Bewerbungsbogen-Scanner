@@ -8,7 +8,6 @@ import {
   normalizedIdCrop,
   parseScannerBootstrap,
   portraitCaptureLayout,
-  preferredCameraZoom,
   updateHoldState,
 } from './scanner-core.js';
 import {
@@ -314,16 +313,6 @@ async function requestCamera() {
           });
         } catch {
           // Continuous autofocus is an optional enhancement only.
-        }
-      }
-      const preferredZoom = preferredCameraZoom(capabilities?.zoom);
-      if (preferredZoom !== null) {
-        try {
-          await track.applyConstraints({
-            advanced: [{ zoom: preferredZoom }],
-          });
-        } catch {
-          // Camera zoom is optional. The portrait guide works without it.
         }
       }
       mediaStream = stream;

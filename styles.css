@@ -105,8 +105,8 @@ button {
   z-index: 3;
   left: 50%;
   top: 45%;
-  width: min(88vw, 44vh, 430px);
-  width: min(88vw, 44dvh, 430px);
+  width: min(75vw, 44vh, 300px);
+  width: min(75vw, 44dvh, 300px);
   aspect-ratio: 53.98 / 85.6;
   transform: translate(-50%, -50%);
   border: 3px solid color-mix(in srgb, var(--guide-color) 62%, transparent);

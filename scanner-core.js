@@ -719,17 +719,3 @@ export function drawPortraitCropAsLandscape(
   );
   context.restore();
 }
-
-export function preferredCameraZoom(zoomCapability) {
-  const minimum = Number(zoomCapability?.min);
-  const maximum = Number(zoomCapability?.max);
-  if (
-    !Number.isFinite(minimum) ||
-    !Number.isFinite(maximum) ||
-    minimum <= 0 ||
-    maximum < minimum
-  ) {
-    return null;
-  }
-  return Math.max(minimum, Math.min(1, maximum));
-}
