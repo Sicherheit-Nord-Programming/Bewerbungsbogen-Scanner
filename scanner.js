@@ -337,7 +337,7 @@ async function requestCamera() {
       setCameraMessage(
         'Ausweis hochkant in den Rahmen halten.',
         sessionClaimed
-          ? 'Oberkante nach links. Der Rahmen wird bei passender Position grün.'
+          ? 'Oberkante nach rechts. Der Rahmen wird bei passender Position grün.'
           : 'Sichere Sitzung wird vorbereitet …',
       );
       if (sessionClaimed) beginAnalysis();
@@ -422,7 +422,7 @@ function beginAnalysis() {
   setGuide(false);
   setCameraMessage(
     'Ausweis hochkant in den Rahmen halten.',
-    'Oberkante nach links. Der Rahmen wird bei passender Position grün.',
+    'Oberkante nach rechts. Der Rahmen wird bei passender Position grün.',
   );
   const generation = analysisGeneration;
   const loop = (timestamp) => {

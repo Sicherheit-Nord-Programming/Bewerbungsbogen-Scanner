@@ -127,9 +127,9 @@ button {
 .guide-orientation {
   position: absolute;
   top: 50%;
-  left: 0;
+  right: 0;
   padding: 5px 9px;
-  transform: translate(-50%, -50%) rotate(-90deg);
+  transform: translate(50%, -50%) rotate(90deg);
   border-radius: 999px;
   color: #fff;
   background: rgba(0, 0, 0, 0.68);

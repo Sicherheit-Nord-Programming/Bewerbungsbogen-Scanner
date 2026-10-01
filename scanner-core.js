@@ -693,7 +693,7 @@ export function portraitCaptureLayout(crop, maximumLongEdge = 2_400) {
     Math.floor(Math.min(maximumLongEdge, crop.height)),
   );
   const height = Math.max(1, Math.floor(width / ID_CARD_ASPECT_RATIO));
-  return { width, height, clockwise: true };
+  return { width, height, clockwise: false };
 }
 
 export function drawPortraitCropAsLandscape(
@@ -704,8 +704,8 @@ export function drawPortraitCropAsLandscape(
   outputHeight,
 ) {
   context.save();
-  context.translate(outputWidth, 0);
-  context.rotate(Math.PI / 2);
+  context.translate(0, outputHeight);
+  context.rotate(-Math.PI / 2);
   context.drawImage(
     source,
     crop.x,
