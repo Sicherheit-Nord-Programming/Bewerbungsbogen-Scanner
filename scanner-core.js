@@ -1,4 +1,5 @@
 export const ID_CARD_ASPECT_RATIO = 85.6 / 53.98;
+export const ID_CARD_PORTRAIT_ASPECT_RATIO = 1 / ID_CARD_ASPECT_RATIO;
 export const HOLD_DURATION_MS = 3_000;
 export const INVALID_GRACE_MS = 350;
 export const MAX_STABLE_MOVEMENT = 0.035;
@@ -327,13 +328,16 @@ export function analyzeFramePosition(image, guideRect) {
     widthScale <= 1.16 &&
     heightScale >= 0.72 &&
     heightScale <= 1.2;
-  const ratioFits = ratio >= 1.4 && ratio <= 1.78;
+  const portraitGuide = guide.height > guide.width;
+  const ratioFits = portraitGuide
+    ? ratio >= 1 / 1.78 && ratio <= 1 / 1.4
+    : ratio >= 1.4 && ratio <= 1.78;
   const detail = interiorDetail(gray, box);
   const hasContent = detail >= 0.012;
   const positioned =
     strongEdges >= 3 && centered && sized && ratioFits && hasContent;
 
-  let reason = 'Ausweis vollständig in den Rahmen halten.';
+  let reason = 'Ausweis hochkant vollständig in den Rahmen halten.';
   if (strongEdges >= 3 && !sized)
     reason =
       widthScale < 0.74 || heightScale < 0.72
@@ -644,18 +648,88 @@ export function coverSourceRect(
 }
 
 /** Expands rather than shrinks so detected card edges are never cut away. */
-export function normalizedIdCrop(box, frameWidth, frameHeight, margin = 0.018) {
+export function normalizedIdCrop(
+  box,
+  frameWidth,
+  frameHeight,
+  margin = 0.018,
+  orientation = 'landscape',
+) {
+  if (orientation !== 'landscape' && orientation !== 'portrait') {
+    throw new TypeError('Die Ausweisausrichtung ist ungültig.');
+  }
+  const targetAspect =
+    orientation === 'portrait'
+      ? ID_CARD_PORTRAIT_ASPECT_RATIO
+      : ID_CARD_ASPECT_RATIO;
   let width = box.width * (1 + margin * 2);
   let height = box.height * (1 + margin * 2);
   const centerX = box.x + box.width / 2;
   const centerY = box.y + box.height / 2;
-  if (width / height > ID_CARD_ASPECT_RATIO)
-    height = width / ID_CARD_ASPECT_RATIO;
-  else width = height * ID_CARD_ASPECT_RATIO;
+  if (width / height > targetAspect) height = width / targetAspect;
+  else width = height * targetAspect;
   const fitScale = Math.min(1, frameWidth / width, frameHeight / height);
   width *= fitScale;
   height *= fitScale;
   const x = clamp(centerX - width / 2, 0, frameWidth - width);
   const y = clamp(centerY - height / 2, 0, frameHeight - height);
   return { x, y, width, height };
+}
+
+export function portraitCaptureLayout(crop, maximumLongEdge = 2_400) {
+  if (
+    !crop ||
+    !Number.isFinite(crop.width) ||
+    !Number.isFinite(crop.height) ||
+    crop.width <= 0 ||
+    crop.height <= 0 ||
+    !Number.isFinite(maximumLongEdge) ||
+    maximumLongEdge <= 0
+  ) {
+    throw new TypeError('Der Hochkant-Ausschnitt ist ungültig.');
+  }
+  const width = Math.max(
+    1,
+    Math.floor(Math.min(maximumLongEdge, crop.height)),
+  );
+  const height = Math.max(1, Math.floor(width / ID_CARD_ASPECT_RATIO));
+  return { width, height, clockwise: true };
+}
+
+export function drawPortraitCropAsLandscape(
+  context,
+  source,
+  crop,
+  outputWidth,
+  outputHeight,
+) {
+  context.save();
+  context.translate(outputWidth, 0);
+  context.rotate(Math.PI / 2);
+  context.drawImage(
+    source,
+    crop.x,
+    crop.y,
+    crop.width,
+    crop.height,
+    0,
+    0,
+    outputHeight,
+    outputWidth,
+  );
+  context.restore();
+}
+
+export function preferredCameraZoom(zoomCapability) {
+  const minimum = Number(zoomCapability?.min);
+  const maximum = Number(zoomCapability?.max);
+  if (
+    !Number.isFinite(minimum) ||
+    !Number.isFinite(maximum) ||
+    minimum <= 0 ||
+    maximum < minimum
+  ) {
+    return null;
+  }
+  return Math.max(minimum, Math.min(1, maximum));
 }

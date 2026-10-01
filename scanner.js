@@ -3,9 +3,12 @@ import {
   analyzeFramePosition,
   coverSourceRect,
   createHoldState,
+  drawPortraitCropAsLandscape,
   enhanceScanPixels,
   normalizedIdCrop,
   parseScannerBootstrap,
+  portraitCaptureLayout,
+  preferredCameraZoom,
   updateHoldState,
 } from './scanner-core.js';
 import {
@@ -283,13 +286,20 @@ async function requestCamera() {
       if (!navigator.mediaDevices?.getUserMedia) {
         throw new DOMException('getUserMedia fehlt', 'NotSupportedError');
       }
+      const supportedConstraints =
+        navigator.mediaDevices.getSupportedConstraints?.() ?? {};
+      const videoConstraints = {
+        facingMode: { ideal: 'environment' },
+        width: { ideal: innerHeight >= innerWidth ? 2_160 : 3_840 },
+        height: { ideal: innerHeight >= innerWidth ? 3_840 : 2_160 },
+        frameRate: { ideal: 30 },
+      };
+      if (supportedConstraints.resizeMode) {
+        videoConstraints.resizeMode = { ideal: 'none' };
+      }
       stream = await navigator.mediaDevices.getUserMedia({
         audio: false,
-        video: {
-          facingMode: { ideal: 'environment' },
-          width: { ideal: innerHeight >= innerWidth ? 2_160 : 3_840 },
-          height: { ideal: innerHeight >= innerWidth ? 3_840 : 2_160 },
-        },
+        video: videoConstraints,
       });
       if (generation !== cameraGeneration || sessionClosed) {
         for (const track of stream.getTracks()) track.stop();
@@ -306,6 +316,16 @@ async function requestCamera() {
           // Continuous autofocus is an optional enhancement only.
         }
       }
+      const preferredZoom = preferredCameraZoom(capabilities?.zoom);
+      if (preferredZoom !== null) {
+        try {
+          await track.applyConstraints({
+            advanced: [{ zoom: preferredZoom }],
+          });
+        } catch {
+          // Camera zoom is optional. The portrait guide works without it.
+        }
+      }
       mediaStream = stream;
       elements.camera.srcObject = stream;
       await waitForVideoMetadata(elements.camera);
@@ -315,9 +335,9 @@ async function requestCamera() {
         return false;
       }
       setCameraMessage(
-        'Ausweis vollständig in den Rahmen halten.',
+        'Ausweis hochkant in den Rahmen halten.',
         sessionClaimed
-          ? 'Der rote Rahmen wird automatisch grün, sobald die Position passt.'
+          ? 'Oberkante nach links. Der Rahmen wird bei passender Position grün.'
           : 'Sichere Sitzung wird vorbereitet …',
       );
       if (sessionClaimed) beginAnalysis();
@@ -401,8 +421,8 @@ function beginAnalysis() {
   lastAnalysisAt = 0;
   setGuide(false);
   setCameraMessage(
-    'Ausweis vollständig in den Rahmen halten.',
-    'Der rote Rahmen wird automatisch grün, sobald die Position passt.',
+    'Ausweis hochkant in den Rahmen halten.',
+    'Oberkante nach links. Der Rahmen wird bei passender Position grün.',
   );
   const generation = analysisGeneration;
   const loop = (timestamp) => {
@@ -461,7 +481,7 @@ function beginAnalysis() {
       } catch {
         setGuide(false);
         setCameraMessage(
-          'Ausweis vollständig in den Rahmen halten.',
+          'Ausweis hochkant in den Rahmen halten.',
           'Das Kamerabild wird vorbereitet …',
         );
       }
@@ -607,26 +627,26 @@ async function produceCapture(positionedBox) {
       elements.analysisCanvas.height,
       sourceCrop,
     );
-    const crop = normalizedIdCrop(sourceBox, still.width, still.height);
-    const nativeWidth = Math.max(
-      1,
-      Math.floor(Math.min(MAX_CAPTURE_LONG_EDGE, crop.width)),
+    const crop = normalizedIdCrop(
+      sourceBox,
+      still.width,
+      still.height,
+      0.018,
+      'portrait',
     );
-    const nativeHeight = Math.max(1, Math.floor(nativeWidth / (85.6 / 53.98)));
+    const nativeLayout = portraitCaptureLayout(crop, MAX_CAPTURE_LONG_EDGE);
+    const nativeWidth = nativeLayout.width;
+    const nativeHeight = nativeLayout.height;
     canvas.width = nativeWidth;
     canvas.height = nativeHeight;
     let context = canvas.getContext('2d', {
       alpha: false,
       willReadFrequently: true,
     });
-    context.drawImage(
+    drawPortraitCropAsLandscape(
+      context,
       still.source,
-      crop.x,
-      crop.y,
-      crop.width,
-      crop.height,
-      0,
-      0,
+      crop,
       nativeWidth,
       nativeHeight,
     );

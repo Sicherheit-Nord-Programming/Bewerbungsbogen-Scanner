@@ -105,8 +105,9 @@ button {
   z-index: 3;
   left: 50%;
   top: 45%;
-  width: min(88vw, 560px);
-  aspect-ratio: 85.6 / 53.98;
+  width: min(88vw, 44vh, 430px);
+  width: min(88vw, 44dvh, 430px);
+  aspect-ratio: 53.98 / 85.6;
   transform: translate(-50%, -50%);
   border: 3px solid color-mix(in srgb, var(--guide-color) 62%, transparent);
   border-radius: 17px;
@@ -121,6 +122,21 @@ button {
 
 .id-guide.is-green {
   --guide-color: #24d28c;
+}
+
+.guide-orientation {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  padding: 5px 9px;
+  transform: translate(-50%, -50%) rotate(-90deg);
+  border-radius: 999px;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.68);
+  font-size: 0.69rem;
+  font-weight: 850;
+  letter-spacing: 0.065em;
+  white-space: nowrap;
 }
 
 .id-guide.is-capture {
@@ -372,8 +388,8 @@ button {
 @media (orientation: landscape) and (max-height: 620px) {
   .id-guide {
     top: 49%;
-    width: min(68vw, 560px);
-    max-height: 62vh;
+    width: min(44vh, 260px);
+    width: min(44dvh, 260px);
   }
 
   .countdown {

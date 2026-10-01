@@ -12,8 +12,8 @@
       content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:; media-src blob:; connect-src https://script.google.com https://*.googleusercontent.com; base-uri 'none'; form-action 'none'"
     />
     <title>Ausweis sicher scannen</title>
-    <link rel="stylesheet" href="./styles.css?v=20261001-capture" />
-    <script type="module" src="./scanner.js?v=20261001-capture"></script>
+    <link rel="stylesheet" href="./styles.css?v=20261001-portrait" />
+    <script type="module" src="./scanner.js?v=20261001-portrait"></script>
   </head>
   <body>
     <main id="app" class="app" aria-busy="true">
@@ -21,6 +21,7 @@
         <video id="camera" autoplay muted playsinline></video>
         <div class="shade" aria-hidden="true"></div>
         <div id="id-guide" class="id-guide is-red" aria-hidden="true">
+          <span class="guide-orientation">OBERKANTE</span>
           <span class="corner top-left"></span>
           <span class="corner top-right"></span>
           <span class="corner bottom-left"></span>
@@ -32,9 +33,9 @@
           <span id="side-label" class="side-label">Vorderseite · 1 von 2</span>
         </header>
         <div class="camera-copy">
-          <p id="instruction">Ausweis vollständig in den Rahmen halten.</p>
+          <p id="instruction">Ausweis hochkant in den Rahmen halten.</p>
           <p id="camera-status" class="camera-status" aria-live="polite">
-            Sichere Sitzung wird vorbereitet …
+            Oberkante nach links. Sichere Sitzung wird vorbereitet …
           </p>
         </div>
         <button
