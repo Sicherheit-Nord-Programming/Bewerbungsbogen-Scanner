@@ -5,6 +5,7 @@ import {
   createHoldState,
   drawPortraitCropAsLandscape,
   enhanceScanPixels,
+  guideCropInSource,
   normalizedIdCrop,
   parseScannerBootstrap,
   portraitCaptureLayout,
@@ -27,10 +28,6 @@ const VIDEO_FALLBACK_MIN_LONG_EDGE = 900;
 const VIDEO_FALLBACK_MIN_SHORT_EDGE = 560;
 const VIDEO_FALLBACK_MIN_SHARPNESS = 12;
 const VIDEO_FALLBACK_OUTPUT_LONG_EDGE = 1_600;
-// A native ImageCapture can wait for autofocus/exposure indefinitely on some
-// mobile browsers.  The live video frame is already available and is a safe,
-// immediate fallback once this short window has elapsed.
-const STILL_CAPTURE_TIMEOUT_MS = 900;
 const CAPTURE_VIBRATION_PATTERN = [80, 40, 120];
 
 const elements = Object.fromEntries(
@@ -41,12 +38,11 @@ const elements = Object.fromEntries(
     'id-guide',
     'countdown',
     'side-label',
-    'instruction',
     'camera-status',
     'start-camera',
     'review',
+    'review-title',
     'preview',
-    'quality-message',
     'consent',
     'use-capture',
     'repeat-capture',
@@ -87,9 +83,15 @@ let busy = false;
 let expiryTimer = 0;
 let captureFeedbackTimer = 0;
 
+function sideTitle() {
+  return side === 'front'
+    ? 'Vorderseite Personalausweis'
+    : 'Rückseite Personalausweis';
+}
+
 function setCameraMessage(instruction, status = '') {
-  elements.instruction.textContent = instruction;
-  elements.cameraStatus.textContent = status;
+  elements.sideLabel.textContent = sideTitle();
+  elements.cameraStatus.textContent = status || instruction;
 }
 
 function setGuide(valid) {
@@ -109,16 +111,6 @@ function setProgress(percent) {
 
 function wait(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
-}
-
-function withTimeout(promise, milliseconds, message) {
-  let timer = 0;
-  const timeout = new Promise((_, reject) => {
-    timer = window.setTimeout(() => reject(new Error(message)), milliseconds);
-  });
-  return Promise.race([promise, timeout]).finally(() => {
-    window.clearTimeout(timer);
-  });
 }
 
 function triggerCaptureFeedback() {
@@ -165,7 +157,6 @@ function clearAcceptedCapture() {
   acceptedCapture = null;
   clearPreview();
   elements.consent.checked = false;
-  elements.qualityMessage.textContent = '';
 }
 
 function clearRetryPayload() {
@@ -447,14 +438,14 @@ function beginAnalysis() {
         const visuallyValid = observation.positioned || holdState.holding;
         setGuide(visuallyValid);
         if (visuallyValid) {
-          elements.instruction.textContent = 'Position passt – ruhig halten.';
+          elements.sideLabel.textContent = sideTitle();
           elements.cameraStatus.textContent = `Automatische Aufnahme in ${Math.max(
             1,
             holdState.countdown,
           )} …`;
           elements.countdown.textContent = holdState.countdown || '';
         } else {
-          elements.instruction.textContent = observation.reason;
+          elements.sideLabel.textContent = sideTitle();
           elements.cameraStatus.textContent =
             'Der Rahmen wird grün, sobald der Ausweis richtig liegt.';
           elements.countdown.textContent = '';
@@ -464,7 +455,7 @@ function beginAnalysis() {
         // box even if this exact frame briefly failed edge detection; waiting
         // for another positioned frame was the source of late/missed shots.
         if (holdState.ready && lastPositionedBox) {
-          void captureAutomatically(lastPositionedBox);
+          void captureAutomatically();
           return;
         }
       } catch {
@@ -478,43 +469,6 @@ function beginAnalysis() {
     analysisFrame = requestAnimationFrame(loop);
   };
   analysisFrame = requestAnimationFrame(loop);
-}
-
-async function decodePhotoBlob(blob) {
-  if (typeof createImageBitmap === 'function') {
-    try {
-      const bitmap = await createImageBitmap(blob, {
-        imageOrientation: 'from-image',
-      });
-      return {
-        source: bitmap,
-        width: bitmap.width,
-        height: bitmap.height,
-        close: () => bitmap.close(),
-      };
-    } catch {
-      // Safari camera formats can require the native image decoder below.
-    }
-  }
-  const objectUrl = URL.createObjectURL(blob);
-  const image = new Image();
-  image.decoding = 'async';
-  try {
-    await new Promise((resolve, reject) => {
-      image.onload = resolve;
-      image.onerror = () => reject(new Error('Das Kamerabild ist unlesbar.'));
-      image.src = objectUrl;
-    });
-    return {
-      source: image,
-      width: image.naturalWidth,
-      height: image.naturalHeight,
-      close: () => URL.revokeObjectURL(objectUrl),
-    };
-  } catch (error) {
-    URL.revokeObjectURL(objectUrl);
-    throw error;
-  }
 }
 
 function captureVideoFrame() {
@@ -543,49 +497,6 @@ function captureVideoFrame() {
   };
 }
 
-async function bestStillSource(videoFallback) {
-  const track = mediaStream?.getVideoTracks?.()[0];
-  if (track && typeof window.ImageCapture === 'function') {
-    try {
-      const capture = new window.ImageCapture(track);
-      // Do not wait indefinitely for autofocus/exposure or photo capabilities.
-      // If the native still is not ready almost immediately, the current video
-      // frame is used below so the 3–2–1 trigger always produces a capture.
-      const photoBlob = await withTimeout(
-        capture.takePhoto(),
-        STILL_CAPTURE_TIMEOUT_MS,
-        'Die Standbildaufnahme reagiert zu langsam.',
-      );
-      const decoded = await withTimeout(
-        decodePhotoBlob(photoBlob),
-        STILL_CAPTURE_TIMEOUT_MS,
-        'Das Standbild konnte nicht schnell genug verarbeitet werden.',
-      );
-      videoFallback?.close();
-      return { ...decoded, kind: 'photo' };
-    } catch {
-      // iOS/Safari and some Android WebViews need the video-frame fallback.
-    }
-  }
-  if (videoFallback) return videoFallback;
-  return {
-    source: elements.camera,
-    width: elements.camera.videoWidth,
-    height: elements.camera.videoHeight,
-    close: () => {},
-    kind: 'video',
-  };
-}
-
-function mapBoxToSource(box, analysisWidth, analysisHeight, sourceCrop) {
-  return {
-    x: sourceCrop.x + (box.x / analysisWidth) * sourceCrop.width,
-    y: sourceCrop.y + (box.y / analysisHeight) * sourceCrop.height,
-    width: (box.width / analysisWidth) * sourceCrop.width,
-    height: (box.height / analysisHeight) * sourceCrop.height,
-  };
-}
-
 async function canvasToJpeg(canvas) {
   const blob = await new Promise((resolve) =>
     canvas.toBlob(resolve, 'image/jpeg', 0.94),
@@ -594,33 +505,34 @@ async function canvasToJpeg(canvas) {
   return { blob, bytes: new Uint8Array(await blob.arrayBuffer()) };
 }
 
-async function produceCapture(positionedBox) {
-  // Freeze the frame synchronously at the trigger boundary.  It remains the
-  // exact 3–2–1 image if ImageCapture needs to fall back after its timeout.
-  const videoFallback = captureVideoFrame();
-  const still = await bestStillSource(videoFallback);
+async function produceCapture() {
+  // Freeze the exact live frame at the 3–2–1 boundary. Using that same camera
+  // geometry keeps the review crop identical to the guide the applicant saw.
+  const still = captureVideoFrame();
+  if (!still) throw new Error('Das Kamerabild ist noch nicht bereit.');
   const canvas = elements.captureCanvas;
   let image = null;
   let temporaryCanvas = null;
   try {
     const stageRect = elements.cameraStage.getBoundingClientRect();
-    const sourceCrop = coverSourceRect(
+    const guideClient = elements.idGuide.getBoundingClientRect();
+    const sourceBox = guideCropInSource(
+      {
+        x: guideClient.left - stageRect.left,
+        y: guideClient.top - stageRect.top,
+        width: guideClient.width,
+        height: guideClient.height,
+      },
       still.width,
       still.height,
       stageRect.width,
       stageRect.height,
     );
-    const sourceBox = mapBoxToSource(
-      positionedBox,
-      elements.analysisCanvas.width,
-      elements.analysisCanvas.height,
-      sourceCrop,
-    );
     const crop = normalizedIdCrop(
       sourceBox,
       still.width,
       still.height,
-      0.018,
+      0,
       'portrait',
     );
     const nativeLayout = portraitCaptureLayout(crop, MAX_CAPTURE_LONG_EDGE);
@@ -727,7 +639,7 @@ function resumeOrRequestCamera() {
   void requestCamera();
 }
 
-async function captureAutomatically(positionedBox) {
+async function captureAutomatically() {
   if (state !== 'scanning' || busy || sessionClosed) return;
   state = 'capturing';
   stopAnalysis();
@@ -741,7 +653,7 @@ async function captureAutomatically(positionedBox) {
     '3–2–1 abgeschlossen. Bitte das Handy kurz ruhig halten.',
   );
   try {
-    const result = await produceCapture(positionedBox);
+    const result = await produceCapture();
     if (sessionClosed) return;
     if (!result.quality.accepted) {
       setGuide(false);
@@ -759,8 +671,7 @@ async function captureAutomatically(positionedBox) {
     stopCamera();
     previewUrl = URL.createObjectURL(result.blob);
     elements.preview.src = previewUrl;
-    elements.qualityMessage.textContent =
-      'Technische Prüfung bestanden. Bitte kurz kontrollieren, ob alle Angaben vollständig lesbar sind.';
+    elements.reviewTitle.textContent = sideTitle();
     elements.consent.checked = false;
     elements.useCapture.disabled = true;
     elements.useCapture.textContent = 'Aufnahme verwenden';
@@ -918,7 +829,8 @@ async function useCapture() {
     if (finalizedSide === 'front') {
       clearAcceptedCapture();
       side = 'back';
-      elements.sideLabel.textContent = 'Rückseite · 2 von 2';
+      elements.sideLabel.textContent = sideTitle();
+      elements.reviewTitle.textContent = sideTitle();
       elements.review.hidden = true;
       elements.cameraStage.hidden = false;
       state = 'scanning';

@@ -647,6 +647,38 @@ export function coverSourceRect(
   return { x: 0, y: (sourceHeight - height) / 2, width: sourceWidth, height };
 }
 
+/** Maps the fixed on-screen guide to the exact pixels visible behind it. */
+export function guideCropInSource(
+  guideRect,
+  sourceWidth,
+  sourceHeight,
+  viewWidth,
+  viewHeight,
+) {
+  if (
+    !guideRect ||
+    ![guideRect.x, guideRect.y, guideRect.width, guideRect.height].every(
+      Number.isFinite,
+    ) ||
+    guideRect.width <= 0 ||
+    guideRect.height <= 0
+  ) {
+    throw new TypeError('Der Scanrahmen ist ungültig.');
+  }
+  const sourceCrop = coverSourceRect(
+    sourceWidth,
+    sourceHeight,
+    viewWidth,
+    viewHeight,
+  );
+  return {
+    x: sourceCrop.x + (guideRect.x / viewWidth) * sourceCrop.width,
+    y: sourceCrop.y + (guideRect.y / viewHeight) * sourceCrop.height,
+    width: (guideRect.width / viewWidth) * sourceCrop.width,
+    height: (guideRect.height / viewHeight) * sourceCrop.height,
+  };
+}
+
 /** Expands rather than shrinks so detected card edges are never cut away. */
 export function normalizedIdCrop(
   box,
@@ -688,10 +720,7 @@ export function portraitCaptureLayout(crop, maximumLongEdge = 2_400) {
   ) {
     throw new TypeError('Der Hochkant-Ausschnitt ist ungültig.');
   }
-  const width = Math.max(
-    1,
-    Math.floor(Math.min(maximumLongEdge, crop.height)),
-  );
+  const width = Math.max(1, Math.floor(Math.min(maximumLongEdge, crop.height)));
   const height = Math.max(1, Math.floor(width / ID_CARD_ASPECT_RATIO));
   return { width, height, clockwise: false };
 }

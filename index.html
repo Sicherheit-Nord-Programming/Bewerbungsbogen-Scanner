@@ -7,13 +7,15 @@
       content="width=device-width, initial-scale=1, viewport-fit=cover"
     />
     <meta name="color-scheme" content="dark" />
+    <meta name="application-name" content="Sicherheit Nord" />
+    <meta name="theme-color" content="#07545a" />
     <meta
       http-equiv="Content-Security-Policy"
       content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:; media-src blob:; connect-src https://script.google.com https://*.googleusercontent.com; base-uri 'none'; form-action 'none'"
     />
-    <title>Ausweis sicher scannen</title>
-    <link rel="stylesheet" href="./styles.css?v=20261001-natural-camera" />
-    <script type="module" src="./scanner.js?v=20261001-natural-camera"></script>
+    <title>Sicherheit Nord · Ausweisscan</title>
+    <link rel="stylesheet" href="./styles.css?v=20261003-lean-scan" />
+    <script type="module" src="./scanner.js?v=20261003-lean-scan"></script>
   </head>
   <body>
     <main id="app" class="app" aria-busy="true">
@@ -28,15 +30,9 @@
           <span class="corner bottom-right"></span>
         </div>
         <div id="countdown" class="countdown" aria-live="assertive"></div>
-        <header class="topbar">
-          <p class="brand">SICHERHEIT NORD</p>
-          <span id="side-label" class="side-label">Vorderseite · 1 von 2</span>
-        </header>
         <div class="camera-copy">
-          <p id="instruction">Ausweis hochkant in den Rahmen halten.</p>
-          <p id="camera-status" class="camera-status" aria-live="polite">
-            Oberkante nach rechts. Sichere Sitzung wird vorbereitet …
-          </p>
+          <p id="side-label" class="side-label">Vorderseite Personalausweis</p>
+          <p id="camera-status" class="visually-hidden" aria-live="polite"></p>
         </div>
         <button
           id="start-camera"
@@ -46,23 +42,17 @@
         >
           Kamera erlauben
         </button>
-        <div class="pilot-note">
-          Pilotbetrieb – bitte nur mit freigegebenen Testdaten verwenden.
-        </div>
       </section>
 
       <section id="review" class="review" hidden aria-labelledby="review-title">
         <div class="review-card">
-          <p class="brand blue">SICHERHEIT NORD</p>
-          <h1 id="review-title">Aufnahme prüfen</h1>
-          <img id="preview" alt="Vorschau der erfassten Ausweisseite" />
-          <p id="quality-message" class="quality-message"></p>
+          <h1 id="review-title">Vorderseite Personalausweis</h1>
+          <div class="preview-frame">
+            <img id="preview" alt="Vorschau der erfassten Ausweisseite" />
+          </div>
           <label class="consent">
             <input id="consent" type="checkbox" />
-            <span
-              >Alle Angaben sind vollständig lesbar. Ich stimme der Ausweiskopie
-              für den Einstellungsprozess zu.</span
-            >
+            <span>Angaben lesbar – Ausweiskopie bestätigen.</span>
           </label>
           <button id="use-capture" class="primary" type="button" disabled>
             Aufnahme verwenden
@@ -79,7 +69,6 @@
 
       <section id="fatal" class="fatal" hidden>
         <div class="fatal-card">
-          <p class="brand blue">SICHERHEIT NORD</p>
           <h1>Scan nicht möglich</h1>
           <p id="fatal-message"></p>
         </div>
@@ -89,10 +78,7 @@
         <div class="complete-card">
           <div class="done-mark">✓</div>
           <h1>Fertig</h1>
-          <p>
-            Vorder- und Rückseite wurden sicher übertragen. Sie können zum
-            Laptop zurückkehren.
-          </p>
+          <p>Zum Laptop zurückkehren.</p>
         </div>
       </section>
 
