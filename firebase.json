@@ -1,0 +1,50 @@
+{
+  "hosting": {
+    "site": "sicherheit-nord-ausweisscan",
+    "public": ".",
+    "ignore": [
+      "firebase.json",
+      ".firebaserc",
+      ".git",
+      ".git/**",
+      ".git/**/*",
+      ".nojekyll",
+      "README.md",
+      "**/.*",
+      "**/node_modules/**",
+      "**/*.test.js",
+      "firebase-debug*.log"
+    ],
+    "headers": [
+      {
+        "source": "**",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache, no-store, must-revalidate"
+          },
+          {
+            "key": "Content-Security-Policy",
+            "value": "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:; media-src blob:; connect-src https://script.google.com https://*.googleusercontent.com; base-uri 'none'; form-action 'none'; object-src 'none'; frame-ancestors 'none'"
+          },
+          {
+            "key": "Permissions-Policy",
+            "value": "camera=(self), microphone=(), geolocation=()"
+          },
+          {
+            "key": "Referrer-Policy",
+            "value": "no-referrer"
+          },
+          {
+            "key": "X-Content-Type-Options",
+            "value": "nosniff"
+          },
+          {
+            "key": "X-Frame-Options",
+            "value": "DENY"
+          }
+        ]
+      }
+    ]
+  }
+}
