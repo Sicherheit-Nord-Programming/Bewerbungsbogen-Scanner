@@ -1,5 +1,7 @@
 export const ID_CARD_ASPECT_RATIO = 85.6 / 53.98;
 export const ID_CARD_PORTRAIT_ASPECT_RATIO = 1 / ID_CARD_ASPECT_RATIO;
+export const PASSPORT_ASPECT_RATIO = 125 / 88;
+export const PASSPORT_PORTRAIT_ASPECT_RATIO = 1 / PASSPORT_ASPECT_RATIO;
 export const HOLD_DURATION_MS = 3_000;
 export const INVALID_GRACE_MS = 350;
 export const MAX_STABLE_MOVEMENT = 0.035;
@@ -21,6 +23,49 @@ const SESSION_PATTERN =
   /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
 const CAPABILITY_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 const APPS_SCRIPT_ENDPOINT_PATTERN = /^\/macros\/s\/[A-Za-z0-9_-]+\/exec$/;
+
+export const SCANNER_DOCUMENTS = Object.freeze([
+  Object.freeze({
+    id: 'identity-card',
+    title: 'Personalausweis',
+    description: 'Vorder- und Rückseite',
+    slots: Object.freeze(['id-front', 'id-back']),
+  }),
+  Object.freeze({
+    id: 'passport',
+    title: 'Reisepass',
+    description: 'Datenseite',
+    slots: Object.freeze(['passport-data']),
+  }),
+  Object.freeze({
+    id: 'health-card',
+    title: 'Krankenkassenkarte',
+    description: 'Vorder- und Rückseite',
+    slots: Object.freeze(['health-front', 'health-back']),
+  }),
+]);
+
+export function documentScanStatus(documentDefinition, completedSlots) {
+  const completed = new Set(completedSlots);
+  const completedCount = documentDefinition.slots.filter((slot) =>
+    completed.has(slot),
+  ).length;
+  if (completedCount === 0) return 'open';
+  if (completedCount === documentDefinition.slots.length) return 'complete';
+  return 'in-progress';
+}
+
+export function nextDocumentSlot(documentDefinition, completedSlots) {
+  const completed = new Set(completedSlots);
+  return documentDefinition.slots.find((slot) => !completed.has(slot)) || null;
+}
+
+export function canCompleteDocumentSession(completedSlots) {
+  const statuses = SCANNER_DOCUMENTS.map((documentDefinition) =>
+    documentScanStatus(documentDefinition, completedSlots),
+  );
+  return statuses.includes('complete') && !statuses.includes('in-progress');
+}
 
 function base64urlToBytes(value) {
   const base64 =
@@ -53,7 +98,7 @@ export function parseScannerBootstrap(hash) {
   }
 
   if (
-    version !== '1' ||
+    (version !== '1' && version !== '2') ||
     !SESSION_PATTERN.test(sessionId) ||
     !CAPABILITY_PATTERN.test(uploadCapability) ||
     !CAPABILITY_PATTERN.test(encodedKey) ||
@@ -686,14 +731,18 @@ export function normalizedIdCrop(
   frameHeight,
   margin = 0.018,
   orientation = 'landscape',
+  landscapeAspectRatio = ID_CARD_ASPECT_RATIO,
 ) {
   if (orientation !== 'landscape' && orientation !== 'portrait') {
     throw new TypeError('Die Ausweisausrichtung ist ungültig.');
   }
+  if (!Number.isFinite(landscapeAspectRatio) || landscapeAspectRatio <= 1) {
+    throw new TypeError('Das Dokumentenformat ist ungültig.');
+  }
   const targetAspect =
     orientation === 'portrait'
-      ? ID_CARD_PORTRAIT_ASPECT_RATIO
-      : ID_CARD_ASPECT_RATIO;
+      ? 1 / landscapeAspectRatio
+      : landscapeAspectRatio;
   let width = box.width * (1 + margin * 2);
   let height = box.height * (1 + margin * 2);
   const centerX = box.x + box.width / 2;
@@ -708,7 +757,11 @@ export function normalizedIdCrop(
   return { x, y, width, height };
 }
 
-export function portraitCaptureLayout(crop, maximumLongEdge = 2_400) {
+export function portraitCaptureLayout(
+  crop,
+  maximumLongEdge = 2_400,
+  landscapeAspectRatio = ID_CARD_ASPECT_RATIO,
+) {
   if (
     !crop ||
     !Number.isFinite(crop.width) ||
@@ -716,12 +769,14 @@ export function portraitCaptureLayout(crop, maximumLongEdge = 2_400) {
     crop.width <= 0 ||
     crop.height <= 0 ||
     !Number.isFinite(maximumLongEdge) ||
-    maximumLongEdge <= 0
+    maximumLongEdge <= 0 ||
+    !Number.isFinite(landscapeAspectRatio) ||
+    landscapeAspectRatio <= 1
   ) {
     throw new TypeError('Der Hochkant-Ausschnitt ist ungültig.');
   }
   const width = Math.max(1, Math.floor(Math.min(maximumLongEdge, crop.height)));
-  const height = Math.max(1, Math.floor(width / ID_CARD_ASPECT_RATIO));
+  const height = Math.max(1, Math.floor(width / landscapeAspectRatio));
   return { width, height, clockwise: false };
 }
 

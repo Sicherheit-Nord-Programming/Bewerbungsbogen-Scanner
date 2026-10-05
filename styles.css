@@ -30,6 +30,10 @@ body {
   background: #05090d;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 button,
 input {
   font: inherit;
@@ -39,11 +43,228 @@ button {
   touch-action: manipulation;
 }
 
+.loading,
+.dashboard {
+  position: fixed;
+  z-index: 30;
+  inset: 0;
+  overflow-y: auto;
+  color: #12223d;
+  background:
+    radial-gradient(circle at 50% 0, rgba(7, 84, 90, 0.12), transparent 38%),
+    #edf3f5;
+}
+
+.loading {
+  display: grid;
+  place-content: center;
+  gap: 18px;
+  padding: 24px;
+  text-align: center;
+  font-weight: 720;
+}
+
+.loading-logo,
+.brand-logo {
+  display: block;
+  width: min(70vw, 330px);
+  height: auto;
+  object-fit: contain;
+}
+
+.loading p {
+  margin: 0;
+}
+
+.dashboard {
+  padding: max(22px, env(safe-area-inset-top)) 16px
+    max(26px, env(safe-area-inset-bottom));
+}
+
+.dashboard-card {
+  width: min(100%, 620px);
+  margin: 0 auto;
+}
+
+.brand-logo {
+  width: min(66vw, 290px);
+  margin: 4px auto 24px;
+}
+
+.dashboard-heading {
+  margin-bottom: 20px;
+  text-align: center;
+}
+
+.eyebrow {
+  margin: 0 0 7px;
+  color: #08707a;
+  font-size: 0.78rem;
+  font-weight: 850;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.dashboard-heading h1 {
+  margin: 0;
+  font-size: clamp(1.7rem, 7vw, 2.25rem);
+  line-height: 1.08;
+}
+
+.dashboard-heading p:last-child {
+  margin: 12px auto 0;
+  max-width: 520px;
+  color: #506174;
+  line-height: 1.48;
+}
+
+.document-list {
+  display: grid;
+  gap: 12px;
+}
+
+.document-card {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) auto;
+  gap: 13px;
+  align-items: center;
+  width: 100%;
+  min-height: 82px;
+  padding: 14px;
+  border: 1px solid #c9d7de;
+  border-radius: 17px;
+  color: #12223d;
+  background: #fff;
+  box-shadow: 0 5px 18px rgba(18, 34, 61, 0.07);
+  text-align: left;
+  cursor: pointer;
+}
+
+.document-card:active {
+  transform: translateY(1px);
+}
+
+.document-card:disabled {
+  cursor: default;
+  opacity: 0.78;
+}
+
+.document-card:focus-visible,
+.camera-action:focus-visible {
+  outline: 3px solid rgba(7, 88, 168, 0.35);
+  outline-offset: 3px;
+}
+
+.document-icon {
+  display: grid;
+  width: 46px;
+  height: 46px;
+  place-items: center;
+  border-radius: 13px;
+  color: #07545a;
+  background: #e0f2f1;
+  font-size: 2rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.document-icon-passport {
+  font-size: 2.2rem;
+}
+
+.document-copy {
+  min-width: 0;
+}
+
+.document-copy strong,
+.document-copy small {
+  display: block;
+}
+
+.document-copy strong {
+  font-size: 1rem;
+}
+
+.document-copy small {
+  margin-top: 4px;
+  color: #617183;
+  font-size: 0.82rem;
+}
+
+.document-status {
+  padding: 6px 9px;
+  border-radius: 999px;
+  font-size: 0.73rem;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.document-status.is-open {
+  color: #526272;
+  background: #edf1f4;
+}
+
+.document-status.is-in-progress {
+  color: #845000;
+  background: #fff0c9;
+}
+
+.document-status.is-complete {
+  color: #05613e;
+  background: #d8f5e8;
+}
+
+.dashboard-hint,
+.dashboard-status {
+  margin: 16px 2px 12px;
+  color: #586879;
+  font-size: 0.88rem;
+  line-height: 1.4;
+  text-align: center;
+}
+
+.dashboard-status {
+  min-height: 20px;
+  margin-top: 11px;
+  color: #9d2d36;
+  font-weight: 700;
+}
+
 .camera-stage {
   position: fixed;
   inset: 0;
   overflow: hidden;
   background: #05090d;
+}
+
+.camera-action {
+  position: absolute;
+  z-index: 8;
+  top: max(16px, env(safe-area-inset-top));
+  min-height: 44px;
+  padding: 10px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.42);
+  border-radius: 999px;
+  color: #fff;
+  background: rgba(4, 10, 15, 0.74);
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.2);
+  font-size: 0.88rem;
+  font-weight: 800;
+  backdrop-filter: blur(8px);
+}
+
+.back-to-dashboard {
+  left: 14px;
+}
+
+.torch-toggle {
+  right: 14px;
+}
+
+.torch-toggle.is-on {
+  color: #10212c;
+  border-color: #fff4b2;
+  background: #ffe875;
 }
 
 .camera-stage video {
@@ -89,6 +310,11 @@ button {
 
 .id-guide.is-green {
   --guide-color: #24d28c;
+}
+
+.id-guide.is-passport,
+.preview-frame.is-passport {
+  aspect-ratio: 88 / 125;
 }
 
 .guide-orientation {
@@ -181,6 +407,13 @@ button {
   margin: 0;
   font-size: 1.08rem;
   font-weight: 800;
+}
+
+.camera-status {
+  min-height: 22px;
+  margin: 7px 0 0;
+  font-size: 0.93rem;
+  font-weight: 720;
 }
 
 .visually-hidden {
@@ -298,6 +531,10 @@ button {
   transform: translate(-50%, -50%) rotate(90deg);
 }
 
+.preview-frame.is-passport #preview {
+  width: 142.05%;
+}
+
 .consent {
   display: flex;
   gap: 11px;
@@ -374,6 +611,23 @@ button {
     width: 28vw;
     bottom: 42px;
     text-align: right;
+  }
+}
+
+@media (max-width: 410px) {
+  .document-card {
+    grid-template-columns: 42px minmax(0, 1fr);
+  }
+
+  .document-icon {
+    width: 42px;
+    height: 42px;
+  }
+
+  .document-status {
+    grid-column: 2;
+    justify-self: start;
+    margin-top: -3px;
   }
 }
 

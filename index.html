@@ -14,14 +14,126 @@
       content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:; media-src blob:; connect-src https://script.google.com https://*.googleusercontent.com; base-uri 'none'; form-action 'none'"
     />
     <title>Sicherheit Nord · Ausweisscan</title>
-    <link rel="stylesheet" href="./styles.css?v=20261003-lean-scan" />
-    <script type="module" src="./scanner.js?v=20261003-lean-scan"></script>
+    <link rel="stylesheet" href="./styles.css?v=20261005-document-dashboard" />
+    <script
+      type="module"
+      src="./scanner.js?v=20261005-document-dashboard"
+    ></script>
   </head>
   <body>
     <main id="app" class="app" aria-busy="true">
-      <section id="camera-stage" class="camera-stage" aria-label="Kamerabild">
+      <section id="loading" class="loading" aria-live="polite">
+        <img
+          class="loading-logo"
+          src="./sicherheit-nord-logo.png"
+          alt="Sicherheit Nord"
+        />
+        <p>Sichere Verbindung wird hergestellt …</p>
+      </section>
+
+      <section
+        id="dashboard"
+        class="dashboard"
+        hidden
+        aria-labelledby="dashboard-title"
+      >
+        <div class="dashboard-card">
+          <img
+            class="brand-logo"
+            src="./sicherheit-nord-logo.png"
+            alt="Sicherheit Nord"
+          />
+          <div class="dashboard-heading">
+            <p class="eyebrow">Dokumentenübersicht</p>
+            <h1 id="dashboard-title">Dokument auswählen</h1>
+            <p>
+              Wählen Sie ein Dokument aus und scannen Sie die angezeigten
+              Seiten. Bereits abgeschlossene Dokumente sind markiert.
+            </p>
+          </div>
+
+          <div id="document-list" class="document-list">
+            <button
+              class="document-card"
+              type="button"
+              data-document="identity-card"
+            >
+              <span class="document-icon" aria-hidden="true">▭</span>
+              <span class="document-copy">
+                <strong>Personalausweis</strong>
+                <small>Vorder- und Rückseite</small>
+              </span>
+              <span class="document-status is-open" data-status>Offen</span>
+            </button>
+            <button
+              class="document-card"
+              type="button"
+              data-document="passport"
+            >
+              <span
+                class="document-icon document-icon-passport"
+                aria-hidden="true"
+                >▯</span
+              >
+              <span class="document-copy">
+                <strong>Reisepass</strong>
+                <small>Datenseite</small>
+              </span>
+              <span class="document-status is-open" data-status>Offen</span>
+            </button>
+            <button
+              class="document-card"
+              type="button"
+              data-document="health-card"
+            >
+              <span class="document-icon" aria-hidden="true">▭</span>
+              <span class="document-copy">
+                <strong>Krankenkassenkarte</strong>
+                <small>Vorder- und Rückseite</small>
+              </span>
+              <span class="document-status is-open" data-status>Offen</span>
+            </button>
+          </div>
+
+          <p id="dashboard-hint" class="dashboard-hint">
+            Schließen Sie mindestens ein Dokument vollständig ab.
+          </p>
+          <button id="finish-session" class="primary" type="button" disabled>
+            Scan abschließen
+          </button>
+          <p
+            id="dashboard-status"
+            class="dashboard-status"
+            aria-live="polite"
+          ></p>
+        </div>
+      </section>
+
+      <section
+        id="camera-stage"
+        class="camera-stage"
+        hidden
+        aria-label="Kamerabild"
+      >
         <video id="camera" autoplay muted playsinline></video>
         <div class="shade" aria-hidden="true"></div>
+        <button
+          id="back-to-dashboard"
+          class="camera-action back-to-dashboard"
+          type="button"
+          hidden
+        >
+          Übersicht
+        </button>
+        <button
+          id="torch-toggle"
+          class="camera-action torch-toggle"
+          type="button"
+          hidden
+          aria-pressed="false"
+        >
+          Licht an
+        </button>
         <div id="id-guide" class="id-guide is-red" aria-hidden="true">
           <span class="guide-orientation">OBERKANTE</span>
           <span class="corner top-left"></span>
@@ -32,7 +144,7 @@
         <div id="countdown" class="countdown" aria-live="assertive"></div>
         <div class="camera-copy">
           <p id="side-label" class="side-label">Vorderseite Personalausweis</p>
-          <p id="camera-status" class="visually-hidden" aria-live="polite"></p>
+          <p id="camera-status" class="camera-status" aria-live="polite"></p>
         </div>
         <button
           id="start-camera"
@@ -48,11 +160,11 @@
         <div class="review-card">
           <h1 id="review-title">Vorderseite Personalausweis</h1>
           <div class="preview-frame">
-            <img id="preview" alt="Vorschau der erfassten Ausweisseite" />
+            <img id="preview" alt="Vorschau der erfassten Dokumentenseite" />
           </div>
           <label class="consent">
             <input id="consent" type="checkbox" />
-            <span>Angaben lesbar – Ausweiskopie bestätigen.</span>
+            <span>Angaben lesbar – Dokumentenkopie bestätigen.</span>
           </label>
           <button id="use-capture" class="primary" type="button" disabled>
             Aufnahme verwenden

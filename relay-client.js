@@ -147,6 +147,7 @@ export async function prepareEncryptedCapture({
   sessionId,
   phoneSession,
   side,
+  protocolVersion = '1',
   jpegBytes,
   width,
   height,
@@ -154,9 +155,14 @@ export async function prepareEncryptedCapture({
   cryptoApi = globalThis.crypto,
   fixedIv,
 }) {
+  if (protocolVersion !== '1' && protocolVersion !== '2') {
+    jpegBytes.fill(0);
+    throw new TypeError('Die Scan-Protokollversion ist ungültig.');
+  }
+  const schemaVersion = Number(protocolVersion);
   const header = new TextEncoder().encode(
     JSON.stringify({
-      schemaVersion: 1,
+      schemaVersion,
       sessionId,
       side,
       mime: 'image/jpeg',
@@ -180,7 +186,9 @@ export async function prepareEncryptedCapture({
     iv.fill(0);
     throw new TypeError('Der AES-GCM-Initialisierungsvektor ist ungültig.');
   }
-  const aad = new TextEncoder().encode(`SN-ID-CAPTURE/v1|${sessionId}|${side}`);
+  const aad = new TextEncoder().encode(
+    `SN-ID-CAPTURE/v${protocolVersion}|${sessionId}|${side}`,
+  );
   let ciphertext;
   let digest;
   try {

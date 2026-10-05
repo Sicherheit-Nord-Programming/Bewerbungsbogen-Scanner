@@ -1,14 +1,20 @@
 import {
   analyzeCaptureQuality,
   analyzeFramePosition,
+  canCompleteDocumentSession,
   coverSourceRect,
   createHoldState,
+  documentScanStatus,
   drawPortraitCropAsLandscape,
   enhanceScanPixels,
   guideCropInSource,
+  ID_CARD_ASPECT_RATIO,
+  nextDocumentSlot,
   normalizedIdCrop,
   parseScannerBootstrap,
+  PASSPORT_ASPECT_RATIO,
   portraitCaptureLayout,
+  SCANNER_DOCUMENTS,
   updateHoldState,
 } from './scanner-core.js';
 import {
@@ -33,6 +39,12 @@ const CAPTURE_VIBRATION_PATTERN = [80, 40, 120];
 const elements = Object.fromEntries(
   [
     'app',
+    'loading',
+    'dashboard',
+    'document-list',
+    'dashboard-hint',
+    'dashboard-status',
+    'finish-session',
     'camera-stage',
     'camera',
     'id-guide',
@@ -40,6 +52,8 @@ const elements = Object.fromEntries(
     'side-label',
     'camera-status',
     'start-camera',
+    'back-to-dashboard',
+    'torch-toggle',
     'review',
     'review-title',
     'preview',
@@ -65,10 +79,17 @@ let phoneSession = '';
 let encryptionKey = null;
 let sessionClaimed = false;
 let sessionClosed = false;
+let protocolVersion = '1';
+let captureMode = 'identity-v1';
 let side = 'front';
+const completedSlots = new Set();
 let state = 'starting';
 let mediaStream = null;
-let cameraPromise = null;
+let mediaStreamRequest = null;
+let activeVideoTrack = null;
+let torchSupported = false;
+let torchEnabled = false;
+let cameraRequest = null;
 let cameraGeneration = 0;
 let analysisGeneration = 0;
 let analysisFrame = 0;
@@ -83,10 +104,58 @@ let busy = false;
 let expiryTimer = 0;
 let captureFeedbackTimer = 0;
 
+const SLOT_PROFILES = Object.freeze({
+  front: {
+    title: 'Vorderseite Personalausweis',
+    aspectRatio: ID_CARD_ASPECT_RATIO,
+    instruction: 'Ausweis hochkant in den Rahmen halten.',
+  },
+  back: {
+    title: 'Rückseite Personalausweis',
+    aspectRatio: ID_CARD_ASPECT_RATIO,
+    instruction: 'Ausweis hochkant in den Rahmen halten.',
+  },
+  'id-front': {
+    title: 'Vorderseite Personalausweis',
+    aspectRatio: ID_CARD_ASPECT_RATIO,
+    instruction: 'Personalausweis hochkant in den Rahmen halten.',
+  },
+  'id-back': {
+    title: 'Rückseite Personalausweis',
+    aspectRatio: ID_CARD_ASPECT_RATIO,
+    instruction: 'Personalausweis hochkant in den Rahmen halten.',
+  },
+  'passport-data': {
+    title: 'Datenseite Reisepass',
+    aspectRatio: PASSPORT_ASPECT_RATIO,
+    instruction: 'Datenseite hochkant in den Rahmen halten.',
+  },
+  'health-front': {
+    title: 'Vorderseite Krankenkassenkarte',
+    aspectRatio: ID_CARD_ASPECT_RATIO,
+    instruction: 'Krankenkassenkarte hochkant in den Rahmen halten.',
+  },
+  'health-back': {
+    title: 'Rückseite Krankenkassenkarte',
+    aspectRatio: ID_CARD_ASPECT_RATIO,
+    instruction: 'Krankenkassenkarte hochkant in den Rahmen halten.',
+  },
+});
+
+function activeProfile() {
+  return SLOT_PROFILES[side] || SLOT_PROFILES.front;
+}
+
 function sideTitle() {
-  return side === 'front'
-    ? 'Vorderseite Personalausweis'
-    : 'Rückseite Personalausweis';
+  return activeProfile().title;
+}
+
+function applyProfileVisuals() {
+  const passport = activeProfile().aspectRatio === PASSPORT_ASPECT_RATIO;
+  elements.idGuide.classList.toggle('is-passport', passport);
+  elements.preview.parentElement.classList.toggle('is-passport', passport);
+  elements.sideLabel.textContent = sideTitle();
+  elements.reviewTitle.textContent = sideTitle();
 }
 
 function setCameraMessage(instruction, status = '') {
@@ -128,6 +197,46 @@ function triggerCaptureFeedback() {
   }, 320);
 }
 
+function updateTorchUi() {
+  const visible = torchSupported && Boolean(activeVideoTrack);
+  elements.torchToggle.hidden = !visible;
+  elements.torchToggle.classList.toggle('is-on', visible && torchEnabled);
+  elements.torchToggle.setAttribute(
+    'aria-pressed',
+    String(visible && torchEnabled),
+  );
+  elements.torchToggle.textContent = torchEnabled ? 'Licht aus' : 'Licht an';
+}
+
+async function setTorch(enabled) {
+  if (!activeVideoTrack || !torchSupported) return false;
+  try {
+    await activeVideoTrack.applyConstraints({
+      advanced: [{ torch: Boolean(enabled) }],
+    });
+    torchEnabled = Boolean(enabled);
+    updateTorchUi();
+    return true;
+  } catch {
+    torchEnabled = false;
+    torchSupported = false;
+    updateTorchUi();
+    return false;
+  }
+}
+
+function resetTorchState() {
+  if (activeVideoTrack && torchEnabled) {
+    void activeVideoTrack
+      .applyConstraints({ advanced: [{ torch: false }] })
+      .catch(() => {});
+  }
+  torchEnabled = false;
+  torchSupported = false;
+  activeVideoTrack = null;
+  updateTorchUi();
+}
+
 function stopAnalysis() {
   analysisGeneration += 1;
   cancelAnimationFrame(analysisFrame);
@@ -135,13 +244,39 @@ function stopAnalysis() {
   elements.countdown.textContent = '';
 }
 
+function stopStreamTracks(stream) {
+  if (!stream) return;
+  for (const track of stream.getTracks()) track.stop();
+}
+
+function releaseCameraStream(stream, request) {
+  if (!stream) return;
+  if (mediaStream === stream && mediaStreamRequest !== request) {
+    // A newer request may receive the same browser-managed stream object.
+    // The stale request must not tear down its successor's active camera.
+    return;
+  }
+  if (mediaStream === stream) {
+    mediaStream = null;
+    mediaStreamRequest = null;
+    resetTorchState();
+    if (elements.camera.srcObject === stream) {
+      elements.camera.pause();
+      elements.camera.srcObject = null;
+    }
+  }
+  stopStreamTracks(stream);
+}
+
 function stopCamera() {
   stopAnalysis();
   cameraGeneration += 1;
-  if (mediaStream) {
-    for (const track of mediaStream.getTracks()) track.stop();
-  }
+  cameraRequest = null;
+  const stream = mediaStream;
   mediaStream = null;
+  mediaStreamRequest = null;
+  resetTorchState();
+  stopStreamTracks(stream);
   elements.camera.pause();
   elements.camera.srcObject = null;
 }
@@ -177,6 +312,7 @@ function disposeSensitiveState() {
   sessionId = '';
   endpoint = '';
   pendingConfirm = false;
+  completedSlots.clear();
   elements.analysisCanvas.width = 0;
   elements.analysisCanvas.height = 0;
   elements.captureCanvas.width = 0;
@@ -186,6 +322,8 @@ function disposeSensitiveState() {
 function fail(message) {
   if (!sessionClosed) disposeSensitiveState();
   state = 'fatal';
+  elements.loading.hidden = true;
+  elements.dashboard.hidden = true;
   elements.cameraStage.hidden = true;
   elements.review.hidden = true;
   elements.complete.hidden = true;
@@ -263,14 +401,18 @@ async function requestCamera() {
     if (liveTrack) return true;
     stopCamera();
   }
-  if (cameraPromise) return cameraPromise;
-  const generation = ++cameraGeneration;
+  if (cameraRequest) return cameraRequest.promise;
+  const request = {
+    generation: ++cameraGeneration,
+    promise: null,
+  };
+  cameraRequest = request;
   elements.startCamera.hidden = true;
   setCameraMessage(
     'Kamera wird geöffnet …',
     'Beim ersten Mal bitte den Kamerazugriff bestätigen.',
   );
-  cameraPromise = (async () => {
+  request.promise = (async () => {
     let stream;
     try {
       if (!navigator.mediaDevices?.getUserMedia) {
@@ -291,8 +433,12 @@ async function requestCamera() {
         audio: false,
         video: videoConstraints,
       });
-      if (generation !== cameraGeneration || sessionClosed) {
-        for (const track of stream.getTracks()) track.stop();
+      if (
+        cameraRequest !== request ||
+        request.generation !== cameraGeneration ||
+        sessionClosed
+      ) {
+        releaseCameraStream(stream, request);
         return false;
       }
       const track = stream.getVideoTracks()[0];
@@ -306,16 +452,46 @@ async function requestCamera() {
           // Continuous autofocus is an optional enhancement only.
         }
       }
-      mediaStream = stream;
-      elements.camera.srcObject = stream;
-      await waitForVideoMetadata(elements.camera);
-      await elements.camera.play();
-      if (generation !== cameraGeneration || sessionClosed) {
-        stopCamera();
+      if (
+        cameraRequest !== request ||
+        request.generation !== cameraGeneration ||
+        sessionClosed
+      ) {
+        releaseCameraStream(stream, request);
         return false;
       }
+      mediaStream = stream;
+      mediaStreamRequest = request;
+      activeVideoTrack = track;
+      torchSupported = capabilities?.torch === true;
+      torchEnabled = false;
+      updateTorchUi();
+      elements.camera.srcObject = stream;
+      await waitForVideoMetadata(elements.camera);
+      if (
+        cameraRequest !== request ||
+        request.generation !== cameraGeneration ||
+        sessionClosed ||
+        mediaStream !== stream ||
+        mediaStreamRequest !== request
+      ) {
+        releaseCameraStream(stream, request);
+        return false;
+      }
+      await elements.camera.play();
+      if (
+        cameraRequest !== request ||
+        request.generation !== cameraGeneration ||
+        sessionClosed ||
+        mediaStream !== stream ||
+        mediaStreamRequest !== request
+      ) {
+        releaseCameraStream(stream, request);
+        return false;
+      }
+      applyProfileVisuals();
       setCameraMessage(
-        'Ausweis hochkant in den Rahmen halten.',
+        activeProfile().instruction,
         sessionClaimed
           ? 'Oberkante nach rechts. Der Rahmen wird bei passender Position grün.'
           : 'Sichere Sitzung wird vorbereitet …',
@@ -323,25 +499,22 @@ async function requestCamera() {
       if (sessionClaimed) beginAnalysis();
       return true;
     } catch (error) {
-      if (stream) {
-        for (const track of stream.getTracks()) track.stop();
-      }
-      if (mediaStream === stream) {
-        mediaStream = null;
-        elements.camera.pause();
-        elements.camera.srcObject = null;
-      }
-      if (generation === cameraGeneration && !sessionClosed) {
+      releaseCameraStream(stream, request);
+      if (
+        cameraRequest === request &&
+        request.generation === cameraGeneration &&
+        !sessionClosed
+      ) {
         setGuide(false);
         setCameraMessage('Kamera wird benötigt.', cameraFailureMessage(error));
         elements.startCamera.hidden = false;
       }
       return false;
     } finally {
-      cameraPromise = null;
+      if (cameraRequest === request) cameraRequest = null;
     }
   })();
-  return cameraPromise;
+  return request.promise;
 }
 
 function visibleFrame(canvas, source, sourceWidth, sourceHeight) {
@@ -400,8 +573,9 @@ function beginAnalysis() {
   lastPositionedBox = null;
   lastAnalysisAt = 0;
   setGuide(false);
+  applyProfileVisuals();
   setCameraMessage(
-    'Ausweis hochkant in den Rahmen halten.',
+    activeProfile().instruction,
     'Oberkante nach rechts. Der Rahmen wird bei passender Position grün.',
   );
   const generation = analysisGeneration;
@@ -439,7 +613,7 @@ function beginAnalysis() {
         setGuide(visuallyValid);
         if (visuallyValid) {
           elements.sideLabel.textContent = sideTitle();
-          elements.cameraStatus.textContent = `Automatische Aufnahme in ${Math.max(
+          elements.cameraStatus.textContent = `Bitte stillhalten · Aufnahme in ${Math.max(
             1,
             holdState.countdown,
           )} …`;
@@ -461,7 +635,7 @@ function beginAnalysis() {
       } catch {
         setGuide(false);
         setCameraMessage(
-          'Ausweis hochkant in den Rahmen halten.',
+          activeProfile().instruction,
           'Das Kamerabild wird vorbereitet …',
         );
       }
@@ -534,8 +708,13 @@ async function produceCapture() {
       still.height,
       0,
       'portrait',
+      activeProfile().aspectRatio,
     );
-    const nativeLayout = portraitCaptureLayout(crop, MAX_CAPTURE_LONG_EDGE);
+    const nativeLayout = portraitCaptureLayout(
+      crop,
+      MAX_CAPTURE_LONG_EDGE,
+      activeProfile().aspectRatio,
+    );
     const nativeWidth = nativeLayout.width;
     const nativeHeight = nativeLayout.height;
     canvas.width = nativeWidth;
@@ -570,7 +749,10 @@ async function produceCapture() {
       still.kind === 'video' && nativeWidth < VIDEO_FALLBACK_OUTPUT_LONG_EDGE
         ? VIDEO_FALLBACK_OUTPUT_LONG_EDGE
         : nativeWidth;
-    const outputHeight = Math.max(1, Math.floor(outputWidth / (85.6 / 53.98)));
+    const outputHeight = Math.max(
+      1,
+      Math.floor(outputWidth / activeProfile().aspectRatio),
+    );
     if (outputWidth !== nativeWidth) {
       temporaryCanvas = document.createElement('canvas');
       temporaryCanvas.width = nativeWidth;
@@ -624,6 +806,122 @@ async function produceCapture() {
     still.close();
     canvas.width = 0;
     canvas.height = 0;
+  }
+}
+
+const STATUS_COPY = Object.freeze({
+  open: 'Offen',
+  'in-progress': 'In Bearbeitung',
+  complete: 'Abgeschlossen',
+});
+
+function renderDashboard() {
+  const statuses = SCANNER_DOCUMENTS.map((documentDefinition) => {
+    const status = documentScanStatus(documentDefinition, completedSlots);
+    const card = elements.documentList.querySelector(
+      `[data-document="${documentDefinition.id}"]`,
+    );
+    const statusElement = card?.querySelector('[data-status]');
+    if (card && statusElement) {
+      statusElement.textContent = STATUS_COPY[status];
+      statusElement.className = `document-status is-${status}`;
+      card.disabled = status === 'complete' || busy;
+      card.setAttribute(
+        'aria-label',
+        `${documentDefinition.title}: ${STATUS_COPY[status]}`,
+      );
+    }
+    return status;
+  });
+  const hasPartial = statuses.includes('in-progress');
+  const canFinish = canCompleteDocumentSession(completedSlots);
+  elements.finishSession.disabled = busy || !canFinish;
+  elements.dashboardHint.textContent = hasPartial
+    ? 'Bitte das bereits begonnene Dokument vollständig erfassen.'
+    : canFinish
+      ? 'Sie können weitere Dokumente scannen oder den Scan abschließen.'
+      : 'Schließen Sie mindestens ein Dokument vollständig ab.';
+}
+
+function showDashboard() {
+  stopCamera();
+  elements.loading.hidden = true;
+  elements.cameraStage.hidden = true;
+  elements.review.hidden = true;
+  elements.dashboard.hidden = false;
+  elements.dashboardStatus.textContent = '';
+  elements.backToDashboard.hidden = true;
+  state = 'dashboard';
+  elements.app.setAttribute('aria-busy', 'false');
+  renderDashboard();
+}
+
+function openDocument(documentId) {
+  if (
+    busy ||
+    sessionClosed ||
+    protocolVersion !== '2' ||
+    captureMode !== 'documents-v2'
+  ) {
+    return;
+  }
+  const documentDefinition = SCANNER_DOCUMENTS.find(
+    (candidate) => candidate.id === documentId,
+  );
+  if (!documentDefinition) return;
+  const nextSlot = nextDocumentSlot(documentDefinition, completedSlots);
+  if (!nextSlot) return;
+  side = nextSlot;
+  applyProfileVisuals();
+  elements.dashboard.hidden = true;
+  elements.review.hidden = true;
+  elements.cameraStage.hidden = false;
+  elements.backToDashboard.hidden = false;
+  state = 'scanning';
+  setGuide(false);
+  setCameraMessage('Kamera wird geöffnet …', 'Bitte einen Moment warten.');
+  void requestCamera();
+}
+
+function backToDashboard() {
+  if (
+    busy ||
+    sessionClosed ||
+    protocolVersion !== '2' ||
+    state !== 'scanning'
+  ) {
+    return;
+  }
+  showDashboard();
+}
+
+async function finishDocumentSession() {
+  if (
+    busy ||
+    sessionClosed ||
+    protocolVersion !== '2' ||
+    !canCompleteDocumentSession(completedSlots)
+  ) {
+    return;
+  }
+  busy = true;
+  elements.dashboardStatus.textContent = 'Abschluss wird sicher bestätigt …';
+  renderDashboard();
+  try {
+    await confirmCompletedSession();
+    completeSession();
+  } catch (error) {
+    if (error instanceof RelayError && !error.retryable) {
+      fail(error.message);
+      return;
+    }
+    elements.dashboardStatus.textContent =
+      error instanceof Error
+        ? error.message
+        : 'Der Abschluss konnte nicht bestätigt werden.';
+  } finally {
+    busy = false;
+    if (!sessionClosed) renderDashboard();
   }
 }
 
@@ -775,9 +1073,17 @@ async function transferPreparedPayload(prepared) {
 }
 
 async function confirmCompletedSession() {
-  const response = await callRelayWithOneRetry(endpoint, 'confirm', {
+  const request = {
     sessionId,
     phoneSession,
+  };
+  if (protocolVersion === '2') {
+    request.slots = [...completedSlots].sort((left, right) =>
+      left.localeCompare(right),
+    );
+  }
+  const response = await callRelayWithOneRetry(endpoint, 'confirm', {
+    ...request,
   });
   if (response.status !== 'ready') {
     throw new RelayError(
@@ -816,6 +1122,7 @@ async function useCapture() {
         sessionId,
         phoneSession,
         side,
+        protocolVersion,
         jpegBytes: acceptedCapture.bytes,
         width: acceptedCapture.width,
         height: acceptedCapture.height,
@@ -826,6 +1133,12 @@ async function useCapture() {
     await transferPreparedPayload(retryPayload);
     const finalizedSide = retryPayload.side;
     clearRetryPayload();
+    if (protocolVersion === '2') {
+      completedSlots.add(finalizedSide);
+      clearAcceptedCapture();
+      showDashboard();
+      return;
+    }
     if (finalizedSide === 'front') {
       clearAcceptedCapture();
       side = 'back';
@@ -871,6 +1184,7 @@ async function useCapture() {
     busy = false;
     elements.uploadProgress.hidden = true;
     updateReviewControls();
+    if (state === 'dashboard') renderDashboard();
   }
 }
 
@@ -896,6 +1210,8 @@ function completeSession() {
   endpoint = '';
   sessionClosed = true;
   state = 'complete';
+  elements.loading.hidden = true;
+  elements.dashboard.hidden = true;
   elements.cameraStage.hidden = true;
   elements.review.hidden = true;
   elements.fatal.hidden = true;
@@ -918,8 +1234,17 @@ async function start() {
     );
     sessionId = bootstrap.sessionId;
     endpoint = bootstrap.endpoint;
+    protocolVersion = bootstrap.version;
+    captureMode = protocolVersion === '2' ? 'documents-v2' : 'identity-v1';
+    side = 'front';
     phoneSession = createPhoneSession();
-    const cameraAttempt = requestCamera();
+    let cameraAttempt = Promise.resolve(false);
+    if (protocolVersion === '1') {
+      elements.loading.hidden = true;
+      elements.cameraStage.hidden = false;
+      applyProfileVisuals();
+      cameraAttempt = requestCamera();
+    }
     encryptionKey = await importCaptureKey(bootstrap.keyBytes);
     let uploadCapability = bootstrap.uploadCapability;
     let claimed;
@@ -939,12 +1264,38 @@ async function start() {
         'invalid-response',
       );
     }
+    if (protocolVersion === '2') {
+      const allowedSlots = new Set(
+        SCANNER_DOCUMENTS.flatMap((documentDefinition) =>
+          Array.from(documentDefinition.slots),
+        ),
+      );
+      if (
+        claimed.captureMode !== 'documents-v2' ||
+        !Array.isArray(claimed.slotsReceived) ||
+        claimed.slotsReceived.some(
+          (slot) => typeof slot !== 'string' || !allowedSlots.has(slot),
+        )
+      ) {
+        throw new RelayError(
+          'Der sichere Dienst hat einen unerwarteten Status geliefert.',
+          false,
+          'invalid-response',
+        );
+      }
+      completedSlots.clear();
+      for (const slot of claimed.slotsReceived) completedSlots.add(slot);
+    }
     scheduleExpiry(claimed.expiresAt);
     sessionClaimed = true;
     elements.app.setAttribute('aria-busy', 'false');
+    if (protocolVersion === '2') {
+      showDashboard();
+      return;
+    }
     await cameraAttempt;
     if (mediaStream) beginAnalysis();
-    else if (!cameraPromise) elements.startCamera.hidden = false;
+    else if (!cameraRequest) elements.startCamera.hidden = false;
   } catch (error) {
     fail(
       error instanceof Error
@@ -955,6 +1306,19 @@ async function start() {
 }
 
 elements.startCamera.addEventListener('click', () => void requestCamera());
+elements.documentList.addEventListener('click', (event) => {
+  const card = event.target.closest('[data-document]');
+  if (card instanceof HTMLButtonElement) openDocument(card.dataset.document);
+});
+elements.finishSession.addEventListener(
+  'click',
+  () => void finishDocumentSession(),
+);
+elements.backToDashboard.addEventListener('click', backToDashboard);
+elements.torchToggle.addEventListener(
+  'click',
+  () => void setTorch(!torchEnabled),
+);
 elements.consent.addEventListener('change', updateReviewControls);
 elements.useCapture.addEventListener('click', () => void useCapture());
 elements.repeatCapture.addEventListener('click', repeatCapture);
