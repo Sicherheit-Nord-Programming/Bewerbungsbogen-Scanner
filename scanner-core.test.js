@@ -14,11 +14,13 @@ import {
   ID_CARD_ASPECT_RATIO,
   ID_CARD_PORTRAIT_ASPECT_RATIO,
   nextDocumentSlot,
+  nextSelectedPlanStep,
   normalizedIdCrop,
   parseScannerBootstrap,
   PASSPORT_ASPECT_RATIO,
   portraitCaptureLayout,
   SCANNER_DOCUMENTS,
+  selectedDocumentPlanComplete,
   updateHoldState,
 } from './scanner-core.js';
 
@@ -139,6 +141,75 @@ test('document dashboard status requires complete documents and rejects half-fin
     false,
   );
   assert.equal(documentScanStatus(passport, ['passport-data']), 'complete');
+});
+
+test('selected scan plan completes only after every chosen document is complete', () => {
+  assert.equal(selectedDocumentPlanComplete([], []), false);
+  assert.equal(
+    selectedDocumentPlanComplete(['passport'], ['passport-data']),
+    true,
+  );
+  assert.equal(
+    selectedDocumentPlanComplete(['identity-card'], ['id-front']),
+    false,
+  );
+  assert.equal(
+    selectedDocumentPlanComplete(['identity-card'], ['id-front', 'id-back']),
+    true,
+  );
+  assert.equal(
+    selectedDocumentPlanComplete(
+      ['identity-card', 'passport'],
+      ['id-front', 'id-back'],
+    ),
+    false,
+  );
+  assert.equal(
+    selectedDocumentPlanComplete(
+      ['identity-card', 'passport'],
+      ['id-front', 'id-back', 'passport-data'],
+    ),
+    true,
+  );
+  assert.equal(
+    selectedDocumentPlanComplete(['health-card'], ['health-front']),
+    false,
+  );
+  assert.equal(
+    selectedDocumentPlanComplete(['unknown'], ['passport-data']),
+    false,
+  );
+});
+
+test('selected scan plan advances, returns to selection and confirms exactly at its last slot', () => {
+  assert.deepEqual(
+    nextSelectedPlanStep(['identity-card'], ['id-front'], 'id-front'),
+    { kind: 'capture', slot: 'id-back' },
+  );
+  assert.deepEqual(
+    nextSelectedPlanStep(['identity-card'], ['id-front', 'id-back'], 'id-back'),
+    { kind: 'confirm' },
+  );
+  assert.deepEqual(
+    nextSelectedPlanStep(
+      ['identity-card', 'passport'],
+      ['id-front', 'id-back'],
+      'id-back',
+    ),
+    { kind: 'dashboard' },
+  );
+  assert.deepEqual(
+    nextSelectedPlanStep(
+      ['identity-card', 'passport'],
+      ['id-front', 'id-back', 'passport-data'],
+      'passport-data',
+    ),
+    { kind: 'confirm' },
+  );
+  assert.deepEqual(
+    nextSelectedPlanStep(['passport'], ['id-front'], 'id-front'),
+    { kind: 'invalid' },
+  );
 });
 
 test('finds a detailed ID-1 card inside the tolerant guide and rejects displacement', () => {

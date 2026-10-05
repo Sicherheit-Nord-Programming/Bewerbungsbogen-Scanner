@@ -67,6 +67,44 @@ export function canCompleteDocumentSession(completedSlots) {
   return statuses.includes('complete') && !statuses.includes('in-progress');
 }
 
+export function selectedDocumentPlanComplete(documentIds, completedSlots) {
+  if (!documentIds || typeof documentIds[Symbol.iterator] !== 'function') {
+    return false;
+  }
+  const selectedIds = new Set(documentIds);
+  if (selectedIds.size === 0) return false;
+  const selectedDocuments = SCANNER_DOCUMENTS.filter((documentDefinition) =>
+    selectedIds.has(documentDefinition.id),
+  );
+  return (
+    selectedDocuments.length === selectedIds.size &&
+    selectedDocuments.every(
+      (documentDefinition) =>
+        documentScanStatus(documentDefinition, completedSlots) === 'complete',
+    )
+  );
+}
+
+export function nextSelectedPlanStep(
+  documentIds,
+  completedSlots,
+  finalizedSlot,
+) {
+  const selectedIds = new Set(documentIds || []);
+  const activeDocument = SCANNER_DOCUMENTS.find(
+    (documentDefinition) =>
+      selectedIds.has(documentDefinition.id) &&
+      documentDefinition.slots.includes(finalizedSlot),
+  );
+  if (!activeDocument) return { kind: 'invalid' };
+  const nextSlot = nextDocumentSlot(activeDocument, completedSlots);
+  if (nextSlot) return { kind: 'capture', slot: nextSlot };
+  if (selectedDocumentPlanComplete(selectedIds, completedSlots)) {
+    return { kind: 'confirm' };
+  }
+  return { kind: 'dashboard' };
+}
+
 function base64urlToBytes(value) {
   const base64 =
     value.replace(/-/g, '+').replace(/_/g, '/') +

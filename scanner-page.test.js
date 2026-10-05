@@ -13,8 +13,8 @@ test('standalone page contains a live camera guide without external code', async
   assert.match(html, /<video[^>]+autoplay[^>]+muted[^>]+playsinline/);
   assert.match(html, /id="id-guide"/);
   assert.match(html, /id="countdown"/);
-  assert.match(html, /scanner\.js\?v=20261005-document-dashboard/);
-  assert.match(html, /styles\.css\?v=20261005-document-dashboard/);
+  assert.match(html, /scanner\.js\?v=20261005-auto-scan-plan/);
+  assert.match(html, /styles\.css\?v=20261005-auto-scan-plan/);
   assert.match(html, /<title>Sicherheit Nord · Ausweisscan<\/title>/);
   assert.match(html, /class="guide-orientation">OBERKANTE</);
   assert.match(html, /Vorderseite Personalausweis/);
@@ -23,7 +23,12 @@ test('standalone page contains a live camera guide without external code', async
   assert.match(html, /data-document="identity-card"/);
   assert.match(html, /data-document="passport"/);
   assert.match(html, /data-document="health-card"/);
-  assert.match(html, /id="finish-session"[^>]+disabled/);
+  assert.match(html, /<h1 id="dashboard-title"[^>]*>Dokumentauswahl<\/h1>/);
+  assert.match(html, /id="start-selection"[^>]+disabled/);
+  assert.doesNotMatch(html, /Dokumentenübersicht|Wählen Sie ein Dokument aus/);
+  assert.doesNotMatch(html, /Bitte das bereits begonnene Dokument/);
+  assert.doesNotMatch(html, /id="finish-session"|Scan abschließen/);
+  assert.doesNotMatch(html, /document-icon/);
   assert.match(html, /id="torch-toggle"/);
   assert.match(html, /id="back-to-dashboard"/);
   assert.doesNotMatch(
@@ -73,6 +78,12 @@ test('standalone page contains a live camera guide without external code', async
     /request\.slots = \[\.\.\.completedSlots\]\.sort\([\s\S]+?localeCompare/,
   );
   assert.match(script, /captureMode !== 'documents-v2'/);
+  assert.match(script, /nextSelectedPlanStep\(/);
+  assert.match(
+    script,
+    /planStep\.kind === 'confirm'[\s\S]+?await confirmCompletedSession\(\)/,
+  );
+  assert.doesNotMatch(script, /finishDocumentSession/);
   assert.match(script, /showDashboard\(\)/);
   assert.match(script, /side = 'back'/);
   assert.match(script, /Rückseite Personalausweis/);
@@ -88,6 +99,8 @@ test('standalone page contains a live camera guide without external code', async
     /\.id-guide\.is-passport,[\s\S]*?aspect-ratio:\s*88\s*\/\s*125/,
   );
   assert.match(styles, /\.document-status\.is-in-progress/);
+  assert.match(styles, /\.document-card\.is-selected/);
+  assert.match(styles, /\.document-card:not\(:disabled\):hover/);
   assert.match(styles, /\.torch-toggle\.is-on/);
   const guideRule = styles.match(/\.id-guide\s*\{([\s\S]*?)\}/)?.[1];
   assert.ok(guideRule);
@@ -144,6 +157,9 @@ export function prepareDashboardLifecycleTest() {
   protocolVersion = '2';
   captureMode = 'documents-v2';
   sessionClaimed = true;
+  selectionLocked = true;
+  selectedDocumentIds.add('identity-card');
+  selectedDocumentIds.add('passport');
   state = 'dashboard';
 }
 export function cameraLifecycleState() {
@@ -188,6 +204,7 @@ export function cameraLifecycleState() {
         classList: classList(),
         disabled: false,
         firstElementChild: { style: {} },
+        focus() {},
         hidden: false,
         parentElement: { classList: classList() },
         pause() {},

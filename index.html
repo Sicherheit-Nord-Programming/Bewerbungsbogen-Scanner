@@ -14,11 +14,8 @@
       content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:; media-src blob:; connect-src https://script.google.com https://*.googleusercontent.com; base-uri 'none'; form-action 'none'"
     />
     <title>Sicherheit Nord · Ausweisscan</title>
-    <link rel="stylesheet" href="./styles.css?v=20261005-document-dashboard" />
-    <script
-      type="module"
-      src="./scanner.js?v=20261005-document-dashboard"
-    ></script>
+    <link rel="stylesheet" href="./styles.css?v=20261005-auto-scan-plan" />
+    <script type="module" src="./scanner.js?v=20261005-auto-scan-plan"></script>
   </head>
   <body>
     <main id="app" class="app" aria-busy="true">
@@ -44,12 +41,7 @@
             alt="Sicherheit Nord"
           />
           <div class="dashboard-heading">
-            <p class="eyebrow">Dokumentenübersicht</p>
-            <h1 id="dashboard-title">Dokument auswählen</h1>
-            <p>
-              Wählen Sie ein Dokument aus und scannen Sie die angezeigten
-              Seiten. Bereits abgeschlossene Dokumente sind markiert.
-            </p>
+            <h1 id="dashboard-title" tabindex="-1">Dokumentauswahl</h1>
           </div>
 
           <div id="document-list" class="document-list">
@@ -57,8 +49,8 @@
               class="document-card"
               type="button"
               data-document="identity-card"
+              aria-pressed="false"
             >
-              <span class="document-icon" aria-hidden="true">▭</span>
               <span class="document-copy">
                 <strong>Personalausweis</strong>
                 <small>Vorder- und Rückseite</small>
@@ -69,12 +61,8 @@
               class="document-card"
               type="button"
               data-document="passport"
+              aria-pressed="false"
             >
-              <span
-                class="document-icon document-icon-passport"
-                aria-hidden="true"
-                >▯</span
-              >
               <span class="document-copy">
                 <strong>Reisepass</strong>
                 <small>Datenseite</small>
@@ -85,8 +73,8 @@
               class="document-card"
               type="button"
               data-document="health-card"
+              aria-pressed="false"
             >
-              <span class="document-icon" aria-hidden="true">▭</span>
               <span class="document-copy">
                 <strong>Krankenkassenkarte</strong>
                 <small>Vorder- und Rückseite</small>
@@ -95,17 +83,14 @@
             </button>
           </div>
 
-          <p id="dashboard-hint" class="dashboard-hint">
-            Schließen Sie mindestens ein Dokument vollständig ab.
-          </p>
-          <button id="finish-session" class="primary" type="button" disabled>
-            Scan abschließen
+          <button
+            id="start-selection"
+            class="primary start-selection"
+            type="button"
+            disabled
+          >
+            Auswahl scannen
           </button>
-          <p
-            id="dashboard-status"
-            class="dashboard-status"
-            aria-live="polite"
-          ></p>
         </div>
       </section>
 
@@ -113,6 +98,7 @@
         id="camera-stage"
         class="camera-stage"
         hidden
+        tabindex="-1"
         aria-label="Kamerabild"
       >
         <video id="camera" autoplay muted playsinline></video>
@@ -158,7 +144,7 @@
 
       <section id="review" class="review" hidden aria-labelledby="review-title">
         <div class="review-card">
-          <h1 id="review-title">Vorderseite Personalausweis</h1>
+          <h1 id="review-title" tabindex="-1">Vorderseite Personalausweis</h1>
           <div class="preview-frame">
             <img id="preview" alt="Vorschau der erfassten Dokumentenseite" />
           </div>
@@ -179,14 +165,14 @@
         </div>
       </section>
 
-      <section id="fatal" class="fatal" hidden>
+      <section id="fatal" class="fatal" hidden tabindex="-1">
         <div class="fatal-card">
           <h1>Scan nicht möglich</h1>
           <p id="fatal-message"></p>
         </div>
       </section>
 
-      <section id="complete" class="complete" hidden>
+      <section id="complete" class="complete" hidden tabindex="-1">
         <div class="complete-card">
           <div class="done-mark">✓</div>
           <h1>Fertig</h1>

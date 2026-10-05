@@ -92,30 +92,14 @@ button {
 }
 
 .dashboard-heading {
-  margin-bottom: 20px;
+  margin-bottom: 24px;
   text-align: center;
-}
-
-.eyebrow {
-  margin: 0 0 7px;
-  color: #08707a;
-  font-size: 0.78rem;
-  font-weight: 850;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
 }
 
 .dashboard-heading h1 {
   margin: 0;
   font-size: clamp(1.7rem, 7vw, 2.25rem);
   line-height: 1.08;
-}
-
-.dashboard-heading p:last-child {
-  margin: 12px auto 0;
-  max-width: 520px;
-  color: #506174;
-  line-height: 1.48;
 }
 
 .document-list {
@@ -125,7 +109,7 @@ button {
 
 .document-card {
   display: grid;
-  grid-template-columns: 48px minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 13px;
   align-items: center;
   width: 100%;
@@ -138,10 +122,35 @@ button {
   box-shadow: 0 5px 18px rgba(18, 34, 61, 0.07);
   text-align: left;
   cursor: pointer;
+  transition:
+    transform 140ms ease,
+    border-color 140ms ease,
+    background-color 140ms ease,
+    box-shadow 140ms ease;
 }
 
 .document-card:active {
-  transform: translateY(1px);
+  transform: translateY(1px) scale(0.992);
+}
+
+@media (hover: hover) {
+  .document-card:not(:disabled):hover {
+    border-color: #6daeb2;
+    background: #f5fbfb;
+    box-shadow: 0 8px 22px rgba(18, 80, 84, 0.12);
+  }
+}
+
+.document-card.is-selected {
+  border-color: #08707a;
+  background: #e9f7f6;
+  box-shadow:
+    0 0 0 2px rgba(8, 112, 122, 0.12),
+    0 8px 22px rgba(18, 80, 84, 0.13);
+}
+
+.document-card.is-not-selected {
+  opacity: 0.58;
 }
 
 .document-card:disabled {
@@ -149,27 +158,14 @@ button {
   opacity: 0.78;
 }
 
+.document-card.is-not-selected:disabled {
+  opacity: 0.58;
+}
+
 .document-card:focus-visible,
 .camera-action:focus-visible {
   outline: 3px solid rgba(7, 88, 168, 0.35);
   outline-offset: 3px;
-}
-
-.document-icon {
-  display: grid;
-  width: 46px;
-  height: 46px;
-  place-items: center;
-  border-radius: 13px;
-  color: #07545a;
-  background: #e0f2f1;
-  font-size: 2rem;
-  font-weight: 800;
-  line-height: 1;
-}
-
-.document-icon-passport {
-  font-size: 2.2rem;
 }
 
 .document-copy {
@@ -214,20 +210,18 @@ button {
   background: #d8f5e8;
 }
 
-.dashboard-hint,
-.dashboard-status {
-  margin: 16px 2px 12px;
-  color: #586879;
-  font-size: 0.88rem;
-  line-height: 1.4;
-  text-align: center;
+.document-status.is-selected {
+  color: #07545a;
+  background: #cceceb;
 }
 
-.dashboard-status {
-  min-height: 20px;
-  margin-top: 11px;
-  color: #9d2d36;
-  font-weight: 700;
+.document-status.is-not-selected {
+  color: #687582;
+  background: #edf1f4;
+}
+
+.start-selection {
+  margin-top: 18px;
 }
 
 .camera-stage {
@@ -616,18 +610,11 @@ button {
 
 @media (max-width: 410px) {
   .document-card {
-    grid-template-columns: 42px minmax(0, 1fr);
-  }
-
-  .document-icon {
-    width: 42px;
-    height: 42px;
+    grid-template-columns: minmax(0, 1fr) auto;
   }
 
   .document-status {
-    grid-column: 2;
-    justify-self: start;
-    margin-top: -3px;
+    justify-self: end;
   }
 }
 

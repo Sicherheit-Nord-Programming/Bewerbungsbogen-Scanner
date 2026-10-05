@@ -16,7 +16,7 @@ dadurch nicht in HTTP-Requests oder Server-Logs:
 ```
 
 - `v=1`: bisheriger Direktfluss für Vorder- und Rückseite des Personalausweises
-- `v=2`: Dokumentübersicht für Personalausweis, Reisepass und
+- `v=2`: Dokumentauswahl für Personalausweis, Reisepass und
   Krankenkassenkarte
 - `s`: UUID der einmaligen Sitzung
 - `u`: 32 Byte Upload-Capability als Base64url ohne Padding
@@ -27,7 +27,9 @@ Nach dem Einlesen entfernt die Seite das Fragment sofort aus der sichtbaren
 Adresse. Der Schlüssel wird als nicht exportierbarer Web-Crypto-Schlüssel
 importiert und niemals an den Relay-Dienst übertragen.
 
-Bei `v=2` startet die Kamera erst, nachdem eine Dokumentkarte ausgewählt wurde.
+Bei `v=2` werden zuerst eine, zwei oder drei Dokumentarten ausgewählt. Nach
+`Auswahl scannen` ist dieser Scanplan gesperrt und die Kamera startet mit dem
+ersten ausgewählten Dokument.
 Folgende stabilen Slot-Bezeichner werden im unveränderten Request-Feld `side`
 an `upload` und `finalize` übergeben:
 
@@ -35,10 +37,11 @@ an `upload` und `finalize` übergeben:
 id-front, id-back, passport-data, health-front, health-back
 ```
 
-Der Abschluss ist erst möglich, wenn mindestens ein Dokument vollständig und
-kein weiteres Dokument nur halb erfasst ist. `confirm` erhält dafür die
-alphabetisch sortierte Liste `slots`. Erst eine Relay-Antwort mit `ready` zeigt
-auf dem Handy den erfolgreichen Abschluss an.
+Sobald alle Dokumente des festgelegten Scanplans vollständig übertragen sind,
+sendet das Handy `confirm` automatisch mit der alphabetisch sortierten Liste
+`slots`. Erst eine Relay-Antwort mit `ready` zeigt auf dem Handy den
+erfolgreichen Abschluss an. Ein zusätzlicher manueller Abschluss ist nicht
+erforderlich.
 
 ## HTTP-Relay
 
@@ -58,8 +61,8 @@ entsprechen dem verschlüsselten Apps-Script-Relay-Protokoll.
 ## Aufnahme
 
 1. Bei `v=1` wird nach einem gültigen QR-Fragment sofort die rückseitige Kamera
-   angefordert. Bei `v=2` erscheint zuerst die Dokumentübersicht. Verweigert
-   der Browser den Kamerastart, erscheint ein Fallback-Button.
+   angefordert. Bei `v=2` erscheint zuerst die Dokumentauswahl. Verweigert der
+   Browser den Kamerastart, erscheint ein Fallback-Button.
 2. Ein toleranter Karten- oder Passrahmen erkennt Dokumentkanten nahe der
    Vorlage. Kurzes
    Handzittern setzt den Countdown nicht sofort zurück.
@@ -71,8 +74,9 @@ entsprechen dem verschlüsselten Apps-Script-Relay-Protokoll.
    konservativ zugeschnitten und farblich optimiert. Es findet weder OCR noch
    generatives Rekonstruieren unlesbarer Schrift statt.
 6. Vor der verschlüsselten Übertragung bestätigt der Nutzer die sichtbare
-   Vorschau. In `v=1` folgt automatisch die Rückseite. In `v=2` führt jede
-   bestätigte Seite zurück zur Dokumentübersicht.
+   Vorschau. Bei zweiseitigen Dokumenten folgt automatisch die Rückseite. Sind
+   weitere Dokumente ausgewählt, führt der Abschluss eines Dokuments zurück
+   zur Dokumentauswahl. Nach dem letzten Dokument wird automatisch bestätigt.
 7. Unterstützt der Kameratreiber `MediaTrackCapabilities.torch`, erscheint im
    Kamerabild ein Schalter für das Dauerlicht. Beim Verlassen, bei Fehlern und
    beim Stoppen der Kamera wird der Zustand zurückgesetzt.
