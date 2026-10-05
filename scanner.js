@@ -814,7 +814,7 @@ async function produceCapture() {
 }
 
 const STATUS_COPY = Object.freeze({
-  open: 'Offen',
+  open: 'Auswählen',
   selected: 'Ausgewählt',
   'not-selected': 'Nicht gewählt',
   'in-progress': 'In Bearbeitung',

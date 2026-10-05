@@ -28,7 +28,7 @@ Adresse. Der Schlüssel wird als nicht exportierbarer Web-Crypto-Schlüssel
 importiert und niemals an den Relay-Dienst übertragen.
 
 Bei `v=2` werden zuerst eine, zwei oder drei Dokumentarten ausgewählt. Nach
-`Auswahl scannen` ist dieser Scanplan gesperrt und die Kamera startet mit dem
+`Fertig` ist dieser Scanplan gesperrt und die Kamera startet mit dem
 ersten ausgewählten Dokument.
 Folgende stabilen Slot-Bezeichner werden im unveränderten Request-Feld `side`
 an `upload` und `finalize` übergeben:

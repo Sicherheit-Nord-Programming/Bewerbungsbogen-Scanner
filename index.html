@@ -14,8 +14,11 @@
       content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:; media-src blob:; connect-src https://script.google.com https://*.googleusercontent.com; base-uri 'none'; form-action 'none'"
     />
     <title>Sicherheit Nord · Ausweisscan</title>
-    <link rel="stylesheet" href="./styles.css?v=20261005-auto-scan-plan" />
-    <script type="module" src="./scanner.js?v=20261005-auto-scan-plan"></script>
+    <link rel="stylesheet" href="./styles.css?v=20261005-clean-selection" />
+    <script
+      type="module"
+      src="./scanner.js?v=20261005-clean-selection"
+    ></script>
   </head>
   <body>
     <main id="app" class="app" aria-busy="true">
@@ -53,9 +56,9 @@
             >
               <span class="document-copy">
                 <strong>Personalausweis</strong>
-                <small>Vorder- und Rückseite</small>
+                <small>2 Seiten</small>
               </span>
-              <span class="document-status is-open" data-status>Offen</span>
+              <span class="document-status is-open" data-status>Auswählen</span>
             </button>
             <button
               class="document-card"
@@ -65,9 +68,9 @@
             >
               <span class="document-copy">
                 <strong>Reisepass</strong>
-                <small>Datenseite</small>
+                <small>1 Seite</small>
               </span>
-              <span class="document-status is-open" data-status>Offen</span>
+              <span class="document-status is-open" data-status>Auswählen</span>
             </button>
             <button
               class="document-card"
@@ -77,9 +80,9 @@
             >
               <span class="document-copy">
                 <strong>Krankenkassenkarte</strong>
-                <small>Vorder- und Rückseite</small>
+                <small>2 Seiten</small>
               </span>
-              <span class="document-status is-open" data-status>Offen</span>
+              <span class="document-status is-open" data-status>Auswählen</span>
             </button>
           </div>
 
@@ -87,9 +90,10 @@
             id="start-selection"
             class="primary start-selection"
             type="button"
+            aria-label="Dokumentauswahl fertigstellen und Scan starten"
             disabled
           >
-            Auswahl scannen
+            Fertig
           </button>
         </div>
       </section>

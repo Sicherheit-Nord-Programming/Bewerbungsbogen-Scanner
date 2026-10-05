@@ -104,22 +104,23 @@ button {
 
 .document-list {
   display: grid;
-  gap: 12px;
+  grid-auto-rows: 1fr;
+  gap: 10px;
 }
 
 .document-card {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  gap: 13px;
+  gap: 16px;
   align-items: center;
   width: 100%;
-  min-height: 82px;
-  padding: 14px;
-  border: 1px solid #c9d7de;
-  border-radius: 17px;
+  min-height: 76px;
+  padding: 14px 16px;
+  border: 1px solid #d3dde2;
+  border-radius: 14px;
   color: #12223d;
   background: #fff;
-  box-shadow: 0 5px 18px rgba(18, 34, 61, 0.07);
+  box-shadow: 0 2px 8px rgba(18, 34, 61, 0.06);
   text-align: left;
   cursor: pointer;
   transition:
@@ -137,16 +138,16 @@ button {
   .document-card:not(:disabled):hover {
     border-color: #6daeb2;
     background: #f5fbfb;
-    box-shadow: 0 8px 22px rgba(18, 80, 84, 0.12);
+    box-shadow: 0 5px 14px rgba(18, 80, 84, 0.11);
   }
 }
 
 .document-card.is-selected {
   border-color: #08707a;
-  background: #e9f7f6;
+  background: #eff9f8;
   box-shadow:
     0 0 0 2px rgba(8, 112, 122, 0.12),
-    0 8px 22px rgba(18, 80, 84, 0.13);
+    0 4px 12px rgba(18, 80, 84, 0.1);
 }
 
 .document-card.is-not-selected {
@@ -178,20 +179,25 @@ button {
 }
 
 .document-copy strong {
-  font-size: 1rem;
+  font-size: clamp(0.92rem, 4.1vw, 1.02rem);
+  line-height: 1.25;
 }
 
 .document-copy small {
-  margin-top: 4px;
+  margin-top: 3px;
   color: #617183;
-  font-size: 0.82rem;
+  font-size: 0.8rem;
+  line-height: 1.25;
 }
 
 .document-status {
-  padding: 6px 9px;
+  min-width: 92px;
+  padding: 7px 10px;
   border-radius: 999px;
   font-size: 0.73rem;
   font-weight: 850;
+  line-height: 1;
+  text-align: center;
   white-space: nowrap;
 }
 
@@ -222,6 +228,7 @@ button {
 
 .start-selection {
   margin-top: 18px;
+  box-shadow: 0 4px 12px rgba(7, 88, 168, 0.18);
 }
 
 .camera-stage {
@@ -615,6 +622,19 @@ button {
 
   .document-status {
     justify-self: end;
+  }
+}
+
+@media (max-width: 370px) {
+  .document-card {
+    gap: 10px;
+    padding-inline: 14px;
+  }
+
+  .document-status {
+    min-width: 84px;
+    padding-inline: 8px;
+    font-size: 0.69rem;
   }
 }
 

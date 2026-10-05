@@ -13,8 +13,8 @@ test('standalone page contains a live camera guide without external code', async
   assert.match(html, /<video[^>]+autoplay[^>]+muted[^>]+playsinline/);
   assert.match(html, /id="id-guide"/);
   assert.match(html, /id="countdown"/);
-  assert.match(html, /scanner\.js\?v=20261005-auto-scan-plan/);
-  assert.match(html, /styles\.css\?v=20261005-auto-scan-plan/);
+  assert.match(html, /scanner\.js\?v=20261005-clean-selection/);
+  assert.match(html, /styles\.css\?v=20261005-clean-selection/);
   assert.match(html, /<title>Sicherheit Nord · Ausweisscan<\/title>/);
   assert.match(html, /class="guide-orientation">OBERKANTE</);
   assert.match(html, /Vorderseite Personalausweis/);
@@ -25,6 +25,14 @@ test('standalone page contains a live camera guide without external code', async
   assert.match(html, /data-document="health-card"/);
   assert.match(html, /<h1 id="dashboard-title"[^>]*>Dokumentauswahl<\/h1>/);
   assert.match(html, /id="start-selection"[^>]+disabled/);
+  assert.match(
+    html,
+    /aria-label="Dokumentauswahl fertigstellen und Scan starten"/,
+  );
+  assert.match(html, /id="start-selection"[\s\S]+?>\s*Fertig\s*<\/button>/);
+  assert.doesNotMatch(html, /Auswahl scannen|>Offen<\/span>/);
+  assert.equal((html.match(/<small>2 Seiten<\/small>/g) ?? []).length, 2);
+  assert.equal((html.match(/<small>1 Seite<\/small>/g) ?? []).length, 1);
   assert.doesNotMatch(html, /Dokumentenübersicht|Wählen Sie ein Dokument aus/);
   assert.doesNotMatch(html, /Bitte das bereits begonnene Dokument/);
   assert.doesNotMatch(html, /id="finish-session"|Scan abschließen/);
@@ -100,6 +108,7 @@ test('standalone page contains a live camera guide without external code', async
   );
   assert.match(styles, /\.document-status\.is-in-progress/);
   assert.match(styles, /\.document-card\.is-selected/);
+  assert.match(styles, /grid-auto-rows:\s*1fr/);
   assert.match(styles, /\.document-card:not\(:disabled\):hover/);
   assert.match(styles, /\.torch-toggle\.is-on/);
   const guideRule = styles.match(/\.id-guide\s*\{([\s\S]*?)\}/)?.[1];
