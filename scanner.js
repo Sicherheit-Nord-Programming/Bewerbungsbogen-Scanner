@@ -1466,4 +1466,4 @@ document.addEventListener('visibilitychange', () => {
   }
 });
 
-void start();
+if (!window.__SN_SCANNER_REDIRECTING__) void start();

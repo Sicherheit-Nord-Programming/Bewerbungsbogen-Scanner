@@ -1,10 +1,27 @@
 # Mobiler Ausweisscanner
 
-Diese statische Top-Level-Seite ist für die Veröffentlichung unter
-`https://sicherheit-nord-programming.github.io/Bewerbungsbogen-Scanner/`
-vorgesehen. Sie läuft bewusst außerhalb der Google-Apps-Script-HTML-Sandbox,
+Die öffentliche Scan-Seite ist unter
+`https://sicherheit-nord-ausweisscan.web.app/` erreichbar. Sie läuft bewusst
+außerhalb der Google-Apps-Script-HTML-Sandbox,
 damit der Browser die rückseitige Smartphone-Kamera über `getUserMedia()`
 freigeben kann.
+
+Die bisherige GitHub-Pages-Adresse bleibt als Legacy-Einstieg bestehen und
+leitet bestehende Scan-QR-Codes unter Erhalt von Querystring und URL-Fragment
+an die neutrale Sicherheit-Nord-Adresse weiter.
+
+## Veröffentlichung
+
+Ein gewöhnlicher GitHub-Push aktualisiert Firebase Hosting nicht automatisch.
+Nach einer geprüften Scanner-Änderung wird deshalb zusätzlich ausgeführt:
+
+```powershell
+npx firebase-tools deploy --only hosting --project sicherheit-nord-aufschaltung --non-interactive
+```
+
+`firebase.json` bindet den Befehl ausdrücklich an die separate Hosting-Site
+`sicherheit-nord-ausweisscan`. Die bestehende Aufschaltungs-Seite wird dadurch
+nicht überschrieben.
 
 ## QR-Fragment
 

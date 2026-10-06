@@ -16,6 +16,12 @@ test('standalone page contains a live camera guide without external code', async
   assert.match(html, /scanner\.js\?v=20261006-direct-action-v5/);
   assert.match(html, /styles\.css\?v=20261006-direct-action-v5/);
   assert.match(html, /<title>Sicherheit Nord · Ausweisscan<\/title>/);
+  assert.match(
+    html,
+    /rel="canonical" href="https:\/\/sicherheit-nord-ausweisscan\.web\.app\/"/,
+  );
+  assert.match(html, /<meta name="referrer" content="no-referrer" \/>/);
+  assert.match(html, /legacy-redirect\.js\?v=20261006-direct-action-v5/);
   assert.match(html, /class="guide-orientation">OBERKANTE</);
   assert.match(html, /Vorderseite Personalausweis/);
   assert.match(html, /sicherheit-nord-logo\.png/);
@@ -151,6 +157,10 @@ test('standalone page contains a live camera guide without external code', async
     script,
     /elements\.useCapture\.disabled =[\s\S]+?!sessionClaimed/,
   );
+  assert.match(
+    script,
+    /if \(!window\.__SN_SCANNER_REDIRECTING__\) void start\(\);/,
+  );
   assert.match(script, /side = 'back'/);
   assert.match(script, /Rückseite Personalausweis/);
   assert.match(script, /acceptedCapture = result;[\s\S]{0,250}stopCamera\(\)/);
@@ -202,6 +212,37 @@ test('standalone page contains a live camera guide without external code', async
   );
 });
 
+test('neutral Firebase hosting is isolated and old QR links retain their fragment', async () => {
+  const [firebaseSource, projectSource, redirect] = await Promise.all([
+    readFile(new URL('firebase.json', directory), 'utf8'),
+    readFile(new URL('.firebaserc', directory), 'utf8'),
+    readFile(new URL('legacy-redirect.js', directory), 'utf8'),
+  ]);
+  const firebase = JSON.parse(firebaseSource);
+  const project = JSON.parse(projectSource);
+  assert.equal(project.projects.default, 'sicherheit-nord-aufschaltung');
+  assert.equal(firebase.hosting.site, 'sicherheit-nord-ausweisscan');
+  assert.equal(firebase.hosting.public, '.');
+  assert.ok(firebase.hosting.ignore.includes('firebase.json'));
+  assert.ok(firebase.hosting.ignore.includes('.firebaserc'));
+  assert.ok(firebase.hosting.ignore.includes('**/*.test.js'));
+  const headers = Object.fromEntries(
+    firebase.hosting.headers[0].headers.map(({ key, value }) => [key, value]),
+  );
+  assert.equal(headers['Cache-Control'], 'no-cache, no-store, must-revalidate');
+  assert.match(headers['Content-Security-Policy'], /frame-ancestors 'none'/);
+  assert.equal(headers['Permissions-Policy'], 'camera=(self), microphone=(), geolocation=()');
+  assert.equal(headers['Referrer-Policy'], 'no-referrer');
+  assert.equal(headers['X-Content-Type-Options'], 'nosniff');
+  assert.equal(headers['X-Frame-Options'], 'DENY');
+  assert.match(redirect, /sicherheit-nord-programming\.github\.io/);
+  assert.match(redirect, /sicherheit-nord-ausweisscan\.web\.app/);
+  assert.match(redirect, /destination\.search = window\.location\.search/);
+  assert.match(redirect, /destination\.hash = window\.location\.hash/);
+  assert.match(redirect, /window\.__SN_SCANNER_REDIRECTING__ = true/);
+  assert.match(redirect, /window\.location\.replace\(destination\.href\)/);
+});
+
 test('a dashboard return detaches an in-flight camera request from the next document', async () => {
   const scannerUrl = new URL('scanner.js', directory);
   const scannerCoreUrl = new URL('scanner-core.js', directory).href;
@@ -217,7 +258,7 @@ test('a dashboard return detaches an in-flight camera request from the next docu
       `from ${JSON.stringify(relayClientUrl)};`,
     )
     .replace(
-      /\nvoid start\(\);\s*$/,
+      /\n(?:if \(!window\.__SN_SCANNER_REDIRECTING__\) )?void start\(\);\s*$/,
       `
 export { backToDashboard, requestCamera, startDocument, stopCamera };
 export function prepareDashboardLifecycleTest() {
@@ -249,7 +290,10 @@ export function cameraLifecycleState() {
 }
 `,
     );
-  assert.doesNotMatch(instrumentedSource, /\nvoid start\(\);\s*$/);
+  assert.doesNotMatch(
+    instrumentedSource,
+    /\n(?:if \(!window\.__SN_SCANNER_REDIRECTING__\) )?void start\(\);\s*$/,
+  );
 
   const originalGlobals = new Map(
     [
