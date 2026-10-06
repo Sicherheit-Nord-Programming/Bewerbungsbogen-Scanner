@@ -16,6 +16,7 @@ import {
   nextDocumentSlot,
   nextSelectedPlanStep,
   normalizedIdCrop,
+  parseDiscoveredScannerBootstrap,
   parseScannerBootstrap,
   PASSPORT_ASPECT_RATIO,
   portraitCaptureLayout,
@@ -30,6 +31,17 @@ function qrFragment(overrides = {}) {
     s: '11111111-1111-4111-8111-111111111111',
     u: 'A'.repeat(43),
     k: 'B'.repeat(43),
+    e: 'https://script.google.com/macros/s/AKfycbx_TEST-123/exec',
+    ...overrides,
+  };
+  return `#${new URLSearchParams(values)}`;
+}
+
+function staticQrFragment(overrides = {}) {
+  const values = {
+    v: '3',
+    d: 'a'.repeat(64),
+    p: 'C'.repeat(43),
     e: 'https://script.google.com/macros/s/AKfycbx_TEST-123/exec',
     ...overrides,
   };
@@ -83,7 +95,7 @@ function sharpCapture(width = 1_400, height = 900) {
   return { data, width, height };
 }
 
-test('parses complete version-1 and version-2 QR fragments only for the fixed Apps Script endpoint', () => {
+test('parses one-use and exact static QR fragments only for the fixed Apps Script endpoint', () => {
   const parsed = parseScannerBootstrap(qrFragment());
   assert.equal(parsed.version, '1');
   assert.equal(parsed.sessionId, '11111111-1111-4111-8111-111111111111');
@@ -99,8 +111,26 @@ test('parses complete version-1 and version-2 QR fragments only for the fixed Ap
   assert.equal(versionTwo.version, '2');
   versionTwo.keyBytes.fill(0);
 
+  const versionThree = parseScannerBootstrap(staticQrFragment());
+  assert.equal(versionThree.version, '3');
+  assert.equal(versionThree.stationId, 'a'.repeat(64));
+  assert.equal(versionThree.pairingKeyBytes.length, 32);
+  assert.equal(
+    versionThree.endpoint,
+    'https://script.google.com/macros/s/AKfycbx_TEST-123/exec',
+  );
+  versionThree.pairingKeyBytes.fill(0);
+
   assert.throws(
-    () => parseScannerBootstrap(qrFragment({ v: '3' })),
+    () => parseScannerBootstrap(qrFragment({ v: '4' })),
+    /ungültig/,
+  );
+  assert.throws(
+    () => parseScannerBootstrap(staticQrFragment({ d: 'a'.repeat(63) })),
+    /ungültig/,
+  );
+  assert.throws(
+    () => parseScannerBootstrap(`${staticQrFragment()}&s=unexpected`),
     /ungültig/,
   );
   assert.throws(
@@ -114,6 +144,52 @@ test('parses complete version-1 and version-2 QR fragments only for the fixed Ap
         qrFragment({ e: 'https://script.google.com/macros/s/x/exec?leak=1' }),
       ),
     /unvollständig oder ungültig/,
+  );
+});
+
+test('validates the decrypted static bootstrap as the discovered v2 session', () => {
+  const endpoint = 'https://script.google.com/macros/s/AKfycbx_TEST-123/exec';
+  const sessionId = '11111111-1111-4111-8111-111111111111';
+  const payload = {
+    v: '2',
+    s: sessionId,
+    u: 'A'.repeat(43),
+    k: 'B'.repeat(43),
+    e: endpoint,
+  };
+  const parsed = parseDiscoveredScannerBootstrap(payload, {
+    sessionId,
+    endpoint,
+  });
+  assert.equal(parsed.version, '2');
+  assert.equal(parsed.sessionId, sessionId);
+  assert.equal(parsed.uploadCapability, 'A'.repeat(43));
+  assert.equal(parsed.keyBytes.length, 32);
+  parsed.keyBytes.fill(0);
+
+  assert.throws(
+    () =>
+      parseDiscoveredScannerBootstrap(
+        { ...payload, s: '22222222-2222-4222-8222-222222222222' },
+        { sessionId, endpoint },
+      ),
+    /ungültig/,
+  );
+  assert.throws(
+    () =>
+      parseDiscoveredScannerBootstrap(
+        { ...payload, extra: 'not-allowed' },
+        { sessionId, endpoint },
+      ),
+    /ungültig/,
+  );
+  assert.throws(
+    () =>
+      parseDiscoveredScannerBootstrap(payload, {
+        sessionId,
+        endpoint: 'https://script.google.com/macros/s/AKfycbx_DIFFERENT/exec',
+      }),
+    /ungültig/,
   );
 });
 

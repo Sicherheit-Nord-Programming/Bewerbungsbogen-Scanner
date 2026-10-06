@@ -1,6 +1,12 @@
 const CHUNK_CHARACTERS = 64 * 1024;
 const MAX_CIPHERTEXT_BYTES = 8 * 1024 * 1024;
 const CONSENT_VERSION = 'id-copy-consent-de-v1';
+const STATIC_BOOTSTRAP_AAD_DOMAIN = 'SN-ID-STATIC-BOOTSTRAP/v1|';
+const STATIC_DISCOVERY_INTERVAL_MS = 1_500;
+const SESSION_PATTERN =
+  /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
+const STATION_PATTERN = /^[a-f0-9]{64}$/;
+const BASE64URL_PATTERN = /^[A-Za-z0-9_-]+$/;
 
 export class RelayError extends Error {
   constructor(message, retryable = false, code = 'service-unavailable') {
@@ -24,6 +30,22 @@ export function bytesToBase64(bytes) {
     binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
   }
   return btoa(binary);
+}
+
+function base64urlToBytes(value) {
+  if (typeof value !== 'string' || !BASE64URL_PATTERN.test(value)) {
+    throw new Error('invalid-base64url');
+  }
+  const base64 =
+    value.replace(/-/g, '+').replace(/_/g, '/') +
+    '='.repeat((4 - (value.length % 4)) % 4);
+  const binary = atob(base64);
+  const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+  if (bytesToBase64url(bytes) !== value) {
+    bytes.fill(0);
+    throw new Error('invalid-base64url');
+  }
+  return bytes;
 }
 
 export function hex(bytes) {
@@ -51,6 +73,22 @@ export async function importCaptureKey(
     ]);
   } finally {
     keyBytes.fill(0);
+  }
+}
+
+export async function importStaticPairingKey(
+  keyBytes,
+  cryptoApi = globalThis.crypto,
+) {
+  try {
+    if (!(keyBytes instanceof Uint8Array) || keyBytes.length !== 32) {
+      throw new TypeError('Der statische QR-Schlüssel ist ungültig.');
+    }
+    return await cryptoApi.subtle.importKey('raw', keyBytes, 'AES-GCM', false, [
+      'decrypt',
+    ]);
+  } finally {
+    keyBytes?.fill?.(0);
   }
 }
 
@@ -139,6 +177,125 @@ export async function callRelayWithOneRetry(
   } catch (error) {
     if (!(error instanceof RelayError) || !error.retryable) throw error;
     return callRelay(endpoint, action, request, options);
+  }
+}
+
+function discoveryWait(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+export async function waitForStaticSession(
+  endpoint,
+  stationId,
+  {
+    fetchImpl = globalThis.fetch,
+    timeoutMs = 30_000,
+    intervalMs = STATIC_DISCOVERY_INTERVAL_MS,
+    waitImpl = discoveryWait,
+    shouldContinue = () => true,
+  } = {},
+) {
+  if (!STATION_PATTERN.test(stationId)) {
+    throw new TypeError('Die Scanner-Station ist ungültig.');
+  }
+  if (!Number.isFinite(intervalMs) || intervalMs < 0) {
+    throw new TypeError('Das Abfrageintervall ist ungültig.');
+  }
+  while (shouldContinue()) {
+    const response = await callRelayWithOneRetry(
+      endpoint,
+      'discover',
+      { stationId },
+      { fetchImpl, timeoutMs },
+    );
+    if (response.status === 'waiting') {
+      await waitImpl(intervalMs);
+      continue;
+    }
+    if (
+      response.status !== 'available' ||
+      !SESSION_PATTERN.test(response.sessionId) ||
+      !Number.isSafeInteger(response.expiresAt) ||
+      typeof response.bootstrapIvBase64url !== 'string' ||
+      typeof response.bootstrapCiphertextBase64url !== 'string'
+    ) {
+      throw new RelayError(
+        'Der sichere Dienst hat einen unerwarteten Status geliefert.',
+        false,
+        'invalid-response',
+      );
+    }
+    return response;
+  }
+  throw new RelayError(
+    'Die sichere Verbindung wurde beendet.',
+    false,
+    'cancelled',
+  );
+}
+
+export async function decryptStaticBootstrap({
+  key,
+  stationId,
+  sessionId,
+  bootstrapIvBase64url,
+  bootstrapCiphertextBase64url,
+  cryptoApi = globalThis.crypto,
+}) {
+  if (
+    !STATION_PATTERN.test(stationId) ||
+    !SESSION_PATTERN.test(sessionId) ||
+    typeof bootstrapIvBase64url !== 'string' ||
+    bootstrapIvBase64url.length !== 16 ||
+    typeof bootstrapCiphertextBase64url !== 'string' ||
+    bootstrapCiphertextBase64url.length < 64 ||
+    bootstrapCiphertextBase64url.length > 4_096
+  ) {
+    throw new RelayError(
+      'Die sichere Sitzung ist unvollständig oder ungültig.',
+      false,
+      'invalid-bootstrap',
+    );
+  }
+
+  let iv;
+  let ciphertext;
+  const aad = new TextEncoder().encode(
+    `${STATIC_BOOTSTRAP_AAD_DOMAIN}${stationId}|${sessionId}|documents-v2`,
+  );
+  let plaintext;
+  try {
+    iv = base64urlToBytes(bootstrapIvBase64url);
+    ciphertext = base64urlToBytes(bootstrapCiphertextBase64url);
+    if (iv.length !== 12 || ciphertext.length < 32) {
+      throw new Error('invalid-bootstrap-size');
+    }
+    plaintext = new Uint8Array(
+      await cryptoApi.subtle.decrypt(
+        {
+          name: 'AES-GCM',
+          iv,
+          additionalData: aad,
+          tagLength: 128,
+        },
+        key,
+        ciphertext,
+      ),
+    );
+    return JSON.parse(
+      new TextDecoder('utf-8', { fatal: true }).decode(plaintext),
+    );
+  } catch {
+    throw new RelayError(
+      'Die sichere Sitzung konnte nicht entschlüsselt werden.',
+      false,
+      'invalid-bootstrap',
+    );
+  } finally {
+    iv?.fill(0);
+    ciphertext?.fill(0);
+    plaintext?.fill(0);
+    aad.fill(0);
   }
 }
 

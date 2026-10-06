@@ -13,8 +13,8 @@ test('standalone page contains a live camera guide without external code', async
   assert.match(html, /<video[^>]+autoplay[^>]+muted[^>]+playsinline/);
   assert.match(html, /id="id-guide"/);
   assert.match(html, /id="countdown"/);
-  assert.match(html, /scanner\.js\?v=20261005-clean-selection/);
-  assert.match(html, /styles\.css\?v=20261005-clean-selection/);
+  assert.match(html, /scanner\.js\?v=20261006-static-qr-v3/);
+  assert.match(html, /styles\.css\?v=20261006-static-qr-v3/);
   assert.match(html, /<title>Sicherheit Nord · Ausweisscan<\/title>/);
   assert.match(html, /class="guide-orientation">OBERKANTE</);
   assert.match(html, /Vorderseite Personalausweis/);
@@ -81,6 +81,17 @@ test('standalone page contains a live camera guide without external code', async
   );
   assert.match(script, /prepareEncryptedCapture/);
   assert.match(script, /protocolVersion,/);
+  assert.match(script, /scanner-core\.js\?v=20261006-static-qr-v3/);
+  assert.match(script, /relay-client\.js\?v=20261006-static-qr-v3/);
+  assert.match(script, /waitForStaticSession\(staticEndpoint, stationId/);
+  assert.match(script, /decryptStaticBootstrap\(\{/);
+  assert.match(script, /parseDiscoveredScannerBootstrap\(decrypted/);
+  const hashRead = script.indexOf('let bootstrapHash = window.location.hash;');
+  const hashRemoval = script.indexOf('window.history.replaceState(', hashRead);
+  const hashParse = script.indexOf('parseScannerBootstrap(bootstrapHash)');
+  assert.ok(hashRead >= 0);
+  assert.ok(hashRemoval > hashRead);
+  assert.ok(hashParse > hashRemoval);
   assert.match(
     script,
     /request\.slots = \[\.\.\.completedSlots\]\.sort\([\s\S]+?localeCompare/,
@@ -151,11 +162,11 @@ test('a dashboard return detaches an in-flight camera request from the next docu
   const source = await readFile(scannerUrl, 'utf8');
   const instrumentedSource = source
     .replace(
-      "from './scanner-core.js';",
+      "from './scanner-core.js?v=20261006-static-qr-v3';",
       `from ${JSON.stringify(scannerCoreUrl)};`,
     )
     .replace(
-      "from './relay-client.js';",
+      "from './relay-client.js?v=20261006-static-qr-v3';",
       `from ${JSON.stringify(relayClientUrl)};`,
     )
     .replace(

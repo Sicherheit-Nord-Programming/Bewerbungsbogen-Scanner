@@ -11,20 +11,24 @@ import {
   nextDocumentSlot,
   nextSelectedPlanStep,
   normalizedIdCrop,
+  parseDiscoveredScannerBootstrap,
   parseScannerBootstrap,
   PASSPORT_ASPECT_RATIO,
   portraitCaptureLayout,
   SCANNER_DOCUMENTS,
   updateHoldState,
-} from './scanner-core.js';
+} from './scanner-core.js?v=20261006-static-qr-v3';
 import {
   callRelayWithOneRetry,
   createPhoneSession,
+  decryptStaticBootstrap,
   disposePreparedCapture,
   importCaptureKey,
+  importStaticPairingKey,
   prepareEncryptedCapture,
   RelayError,
-} from './relay-client.js';
+  waitForStaticSession,
+} from './relay-client.js?v=20261006-static-qr-v3';
 
 const MAX_FINALIZE_ATTEMPTS = 5;
 const LIVE_ANALYSIS_INTERVAL_MS = 145;
@@ -1264,19 +1268,63 @@ function completeSession() {
   elements.complete.focus({ preventScroll: true });
 }
 
+async function resolveScannerBootstrap(initialBootstrap) {
+  if (initialBootstrap.version !== '3') return initialBootstrap;
+
+  const { endpoint: staticEndpoint, stationId } = initialBootstrap;
+  const pairingKey = await importStaticPairingKey(
+    initialBootstrap.pairingKeyBytes,
+  );
+  let discovered;
+  let decrypted;
+  try {
+    discovered = await waitForStaticSession(staticEndpoint, stationId, {
+      shouldContinue: () => !sessionClosed,
+    });
+    decrypted = await decryptStaticBootstrap({
+      key: pairingKey,
+      stationId,
+      sessionId: discovered.sessionId,
+      bootstrapIvBase64url: discovered.bootstrapIvBase64url,
+      bootstrapCiphertextBase64url: discovered.bootstrapCiphertextBase64url,
+    });
+    return parseDiscoveredScannerBootstrap(decrypted, {
+      sessionId: discovered.sessionId,
+      endpoint: staticEndpoint,
+    });
+  } finally {
+    if (discovered) {
+      discovered.bootstrapIvBase64url = '';
+      discovered.bootstrapCiphertextBase64url = '';
+      discovered.sessionId = '';
+    }
+    if (decrypted && typeof decrypted === 'object') {
+      for (const field of Object.keys(decrypted)) decrypted[field] = '';
+    }
+  }
+}
+
 async function start() {
   try {
-    if (!window.isSecureContext || !window.crypto?.subtle) {
-      throw new Error(
-        'Dieser Browser unterstützt die sichere Kameraerfassung nicht.',
-      );
-    }
-    const bootstrap = parseScannerBootstrap(window.location.hash);
+    let bootstrapHash = window.location.hash;
     window.history.replaceState(
       null,
       '',
       `${window.location.pathname}${window.location.search}`,
     );
+    if (!window.isSecureContext || !window.crypto?.subtle) {
+      bootstrapHash = '';
+      throw new Error(
+        'Dieser Browser unterstützt die sichere Kameraerfassung nicht.',
+      );
+    }
+    let parsedBootstrap;
+    try {
+      parsedBootstrap = parseScannerBootstrap(bootstrapHash);
+    } finally {
+      bootstrapHash = '';
+    }
+    const bootstrap = await resolveScannerBootstrap(parsedBootstrap);
     sessionId = bootstrap.sessionId;
     endpoint = bootstrap.endpoint;
     protocolVersion = bootstrap.version;

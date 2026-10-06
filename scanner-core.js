@@ -22,6 +22,7 @@ const MIN_GLOBAL_GLARE_SUPPORT = 0.012;
 const SESSION_PATTERN =
   /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
 const CAPABILITY_PATTERN = /^[A-Za-z0-9_-]{43}$/;
+const STATION_PATTERN = /^[a-f0-9]{64}$/;
 const APPS_SCRIPT_ENDPOINT_PATTERN = /^\/macros\/s\/[A-Za-z0-9_-]+\/exec$/;
 
 export const SCANNER_DOCUMENTS = Object.freeze([
@@ -113,39 +114,51 @@ function base64urlToBytes(value) {
   return Uint8Array.from(binary, (character) => character.charCodeAt(0));
 }
 
-/**
- * Parses the one-use QR fragment without ever placing its secrets in a query
- * string. The endpoint is deliberately restricted to the production Apps
- * Script host so a forged QR code cannot redirect encrypted ID material.
- */
-export function parseScannerBootstrap(hash) {
-  const fragment = new URLSearchParams(String(hash || '').replace(/^#/, ''));
-  const version = fragment.get('v') || '';
-  const sessionId = fragment.get('s') || '';
-  const uploadCapability = fragment.get('u') || '';
-  const encodedKey = fragment.get('k') || '';
-  const endpointValue = fragment.get('e') || '';
-
+function parseRelayEndpoint(value) {
   let endpoint;
-  let keyBytes;
   try {
-    endpoint = new URL(endpointValue);
-    keyBytes = base64urlToBytes(encodedKey);
+    endpoint = new URL(value);
   } catch {
     throw new Error('Der QR-Code ist unvollständig oder ungültig.');
   }
-
   if (
-    (version !== '1' && version !== '2') ||
-    !SESSION_PATTERN.test(sessionId) ||
-    !CAPABILITY_PATTERN.test(uploadCapability) ||
-    !CAPABILITY_PATTERN.test(encodedKey) ||
-    keyBytes.length !== 32 ||
     endpoint.protocol !== 'https:' ||
     endpoint.hostname !== 'script.google.com' ||
     endpoint.search ||
     endpoint.hash ||
     !APPS_SCRIPT_ENDPOINT_PATTERN.test(endpoint.pathname)
+  ) {
+    throw new Error('Der QR-Code ist unvollständig oder ungültig.');
+  }
+  return endpoint.href;
+}
+
+function decodeSecret(value) {
+  let bytes;
+  try {
+    bytes = base64urlToBytes(value);
+  } catch {
+    throw new Error('Der QR-Code ist unvollständig oder ungültig.');
+  }
+  if (!CAPABILITY_PATTERN.test(value) || bytes.length !== 32) {
+    bytes.fill(0);
+    throw new Error('Der QR-Code ist unvollständig oder ungültig.');
+  }
+  return bytes;
+}
+
+function parseOneUseBootstrap(values) {
+  const version = values.v || '';
+  const sessionId = values.s || '';
+  const uploadCapability = values.u || '';
+  const encodedKey = values.k || '';
+  const endpoint = parseRelayEndpoint(values.e || '');
+  const keyBytes = decodeSecret(encodedKey);
+
+  if (
+    (version !== '1' && version !== '2') ||
+    !SESSION_PATTERN.test(sessionId) ||
+    !CAPABILITY_PATTERN.test(uploadCapability)
   ) {
     keyBytes.fill(0);
     throw new Error('Der QR-Code ist unvollständig oder ungültig.');
@@ -156,8 +169,78 @@ export function parseScannerBootstrap(hash) {
     sessionId,
     uploadCapability,
     keyBytes,
-    endpoint: endpoint.href,
+    endpoint,
   };
+}
+
+/**
+ * Parses a one-use v1/v2 or static v3 QR fragment without ever placing its
+ * secrets in a query string. The endpoint is deliberately restricted to the
+ * production Apps Script host so a forged QR code cannot redirect encrypted
+ * ID material.
+ */
+export function parseScannerBootstrap(hash) {
+  const fragment = new URLSearchParams(String(hash || '').replace(/^#/, ''));
+  const version = fragment.get('v') || '';
+  if (version !== '3') {
+    return parseOneUseBootstrap({
+      v: version,
+      s: fragment.get('s') || '',
+      u: fragment.get('u') || '',
+      k: fragment.get('k') || '',
+      e: fragment.get('e') || '',
+    });
+  }
+
+  const stationId = fragment.get('d') || '';
+  const encodedPairingKey = fragment.get('p') || '';
+  const endpoint = parseRelayEndpoint(fragment.get('e') || '');
+  const pairingKeyBytes = decodeSecret(encodedPairingKey);
+  const expectedFields = ['d', 'e', 'p', 'v'];
+  const actualFields = [...fragment.keys()].sort();
+  if (
+    !STATION_PATTERN.test(stationId) ||
+    actualFields.length !== expectedFields.length ||
+    actualFields.some((field, index) => field !== expectedFields[index])
+  ) {
+    pairingKeyBytes.fill(0);
+    throw new Error('Der QR-Code ist unvollständig oder ungültig.');
+  }
+
+  return {
+    version,
+    stationId,
+    pairingKeyBytes,
+    endpoint,
+  };
+}
+
+/** Validates the authenticated one-use v2 bootstrap recovered through v3. */
+export function parseDiscoveredScannerBootstrap(
+  value,
+  { sessionId: expectedSessionId, endpoint: expectedEndpoint },
+) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('Die sichere Sitzung ist unvollständig oder ungültig.');
+  }
+  const expectedFields = ['e', 'k', 's', 'u', 'v'];
+  const actualFields = Object.keys(value).sort();
+  if (
+    actualFields.length !== expectedFields.length ||
+    actualFields.some((field, index) => field !== expectedFields[index])
+  ) {
+    throw new Error('Die sichere Sitzung ist unvollständig oder ungültig.');
+  }
+  const parsed = parseOneUseBootstrap(value);
+  if (
+    parsed.version !== '2' ||
+    parsed.sessionId !== expectedSessionId ||
+    parsed.endpoint !== expectedEndpoint
+  ) {
+    parsed.keyBytes.fill(0);
+    throw new Error('Die sichere Sitzung ist unvollständig oder ungültig.');
+  }
+  return parsed;
 }
 
 function assertImageShape(image) {
