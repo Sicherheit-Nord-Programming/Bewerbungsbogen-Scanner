@@ -13,8 +13,8 @@ test('standalone page contains a live camera guide without external code', async
   assert.match(html, /<video[^>]+autoplay[^>]+muted[^>]+playsinline/);
   assert.match(html, /id="id-guide"/);
   assert.match(html, /id="countdown"/);
-  assert.match(html, /scanner\.js\?v=20261006-direct-dashboard-v4/);
-  assert.match(html, /styles\.css\?v=20261006-direct-dashboard-v4/);
+  assert.match(html, /scanner\.js\?v=20261006-direct-action-v5/);
+  assert.match(html, /styles\.css\?v=20261006-direct-action-v5/);
   assert.match(html, /<title>Sicherheit Nord · Ausweisscan<\/title>/);
   assert.match(html, /class="guide-orientation">OBERKANTE</);
   assert.match(html, /Vorderseite Personalausweis/);
@@ -24,12 +24,22 @@ test('standalone page contains a live camera guide without external code', async
   assert.match(html, /data-document="passport"/);
   assert.match(html, /data-document="health-card"/);
   assert.match(html, /<h1 id="dashboard-title"[^>]*>Dokumentauswahl<\/h1>/);
-  assert.match(html, /id="start-selection"[^>]+disabled/);
-  assert.match(
+  assert.doesNotMatch(
     html,
-    /aria-label="Dokumentauswahl fertigstellen und Scan starten"/,
+    /id="start-selection"|Dokumentauswahl fertigstellen/,
   );
-  assert.match(html, /id="start-selection"[\s\S]+?>\s*Fertig\s*<\/button>/);
+  assert.doesNotMatch(
+    html,
+    /<button[^>]*>[\s\S]{0,80}\bFertig\b[\s\S]{0,20}<\/button>/,
+  );
+  for (const documentId of ['identity-card', 'passport', 'health-card']) {
+    const cardTag = html.match(
+      new RegExp(`<button(?=[^>]*data-document="${documentId}")[^>]*>`),
+    )?.[0];
+    assert.ok(cardTag);
+    assert.doesNotMatch(cardTag, /aria-pressed=/);
+  }
+  assert.equal((html.match(/>Scannen<\/span>/g) ?? []).length, 3);
   assert.doesNotMatch(html, /Auswahl scannen|>Offen<\/span>/);
   assert.equal((html.match(/<small>2 Seiten<\/small>/g) ?? []).length, 2);
   assert.equal((html.match(/<small>1 Seite<\/small>/g) ?? []).length, 1);
@@ -81,8 +91,8 @@ test('standalone page contains a live camera guide without external code', async
   );
   assert.match(script, /prepareEncryptedCapture/);
   assert.match(script, /protocolVersion,/);
-  assert.match(script, /scanner-core\.js\?v=20261006-direct-dashboard-v4/);
-  assert.match(script, /relay-client\.js\?v=20261006-direct-dashboard-v4/);
+  assert.match(script, /scanner-core\.js\?v=20261006-direct-action-v5/);
+  assert.match(script, /relay-client\.js\?v=20261006-direct-action-v5/);
   assert.match(script, /waitForStaticSession\(staticEndpoint, stationId/);
   assert.match(script, /decryptStaticBootstrap\(\{/);
   assert.match(script, /parseDiscoveredScannerBootstrap\(decrypted/);
@@ -110,7 +120,36 @@ test('standalone page contains a live camera guide without external code', async
   );
   assert.match(
     script,
-    /elements\.startSelection\.disabled =[\s\S]+?selectedDocumentIds\.size === 0 \|\| !sessionClaimed/,
+    /function startDocument\(documentId\)[\s\S]+?selectedDocumentIds\.add\(documentId\)[\s\S]+?openDocument\(documentId\)/,
+  );
+  const openDocumentStart = script.indexOf('function openDocument(documentId)');
+  const startDocumentStart = script.indexOf(
+    'function startDocument(documentId)',
+    openDocumentStart,
+  );
+  const openDocumentSource = script.slice(
+    openDocumentStart,
+    startDocumentStart,
+  );
+  assert.ok(openDocumentStart >= 0 && startDocumentStart > openDocumentStart);
+  assert.doesNotMatch(openDocumentSource, /!sessionClaimed/);
+  assert.match(openDocumentSource, /void requestCamera\(\)/);
+  assert.match(
+    script,
+    /function resumeSelectedDocumentAfterClaim\(\)[\s\S]+?side = nextSlot[\s\S]+?resumeOrRequestCamera\(\)/,
+  );
+  assert.match(
+    script,
+    /sessionClaimed = true;[\s\S]+?resumeSelectedDocumentAfterClaim\(\)/,
+  );
+  assert.match(script, /else startDocument\(card\.dataset\.document\)/);
+  assert.doesNotMatch(
+    script,
+    /toggleDocumentSelection|startSelectedDocuments|elements\.startSelection/,
+  );
+  assert.match(
+    script,
+    /elements\.useCapture\.disabled =[\s\S]+?!sessionClaimed/,
   );
   assert.match(script, /side = 'back'/);
   assert.match(script, /Rückseite Personalausweis/);
@@ -170,25 +209,36 @@ test('a dashboard return detaches an in-flight camera request from the next docu
   const source = await readFile(scannerUrl, 'utf8');
   const instrumentedSource = source
     .replace(
-      "from './scanner-core.js?v=20261006-direct-dashboard-v4';",
+      "from './scanner-core.js?v=20261006-direct-action-v5';",
       `from ${JSON.stringify(scannerCoreUrl)};`,
     )
     .replace(
-      "from './relay-client.js?v=20261006-direct-dashboard-v4';",
+      "from './relay-client.js?v=20261006-direct-action-v5';",
       `from ${JSON.stringify(relayClientUrl)};`,
     )
     .replace(
       /\nvoid start\(\);\s*$/,
       `
-export { backToDashboard, openDocument, requestCamera, stopCamera };
+export { backToDashboard, requestCamera, startDocument, stopCamera };
 export function prepareDashboardLifecycleTest() {
   protocolVersion = '2';
   captureMode = 'documents-v2';
   sessionClaimed = true;
-  selectionLocked = true;
-  selectedDocumentIds.add('identity-card');
-  selectedDocumentIds.add('passport');
+  selectionLocked = false;
+  selectedDocumentIds.clear();
   state = 'dashboard';
+}
+export function preparePreclaimLifecycleTest() {
+  protocolVersion = '2';
+  captureMode = 'documents-v2';
+  sessionClaimed = false;
+  selectionLocked = false;
+  selectedDocumentIds.clear();
+  state = 'dashboard';
+}
+export function finishPreclaimLifecycleTest() {
+  sessionClaimed = true;
+  resumeSelectedDocumentAfterClaim();
 }
 export function cameraLifecycleState() {
   return {
@@ -246,7 +296,7 @@ export function cameraLifecycleState() {
       if (id === 'camera') {
         Object.assign(value, {
           play: async () => {},
-          readyState: 1,
+          readyState: 2,
           srcObject: null,
           videoHeight: 1_920,
           videoWidth: 1_080,
@@ -282,13 +332,18 @@ export function cameraLifecycleState() {
   };
   const firstCamera = deferred();
   const secondCamera = deferred();
-  const pendingCameras = [firstCamera, secondCamera];
+  const thirdCamera = deferred();
+  const pendingCameras = [firstCamera, secondCamera, thirdCamera];
   let getUserMediaCalls = 0;
+  let animationFrameCalls = 0;
   let scanner;
 
   try {
     defineGlobal('cancelAnimationFrame', () => {});
-    defineGlobal('requestAnimationFrame', () => 1);
+    defineGlobal('requestAnimationFrame', () => {
+      animationFrameCalls += 1;
+      return animationFrameCalls;
+    });
     defineGlobal('innerHeight', 844);
     defineGlobal('innerWidth', 390);
     defineGlobal('HTMLButtonElement', class {});
@@ -321,10 +376,10 @@ export function cameraLifecycleState() {
     const secondStream = createStream();
 
     scanner.prepareDashboardLifecycleTest();
-    scanner.openDocument('identity-card');
+    scanner.startDocument('identity-card');
     const firstResult = scanner.cameraLifecycleState().cameraPromise;
     scanner.backToDashboard();
-    scanner.openDocument('passport');
+    scanner.startDocument('passport');
     const secondResult = scanner.cameraLifecycleState().cameraPromise;
     assert.ok(firstResult);
     assert.ok(secondResult);
@@ -355,6 +410,29 @@ export function cameraLifecycleState() {
 
     scanner.stopCamera();
     assert.equal(secondStream.track.stopCalls, 1);
+
+    const thirdStream = createStream();
+    animationFrameCalls = 0;
+    scanner.preparePreclaimLifecycleTest();
+    scanner.startDocument('health-card');
+    const thirdResult = scanner.cameraLifecycleState().cameraPromise;
+    assert.ok(thirdResult);
+    thirdCamera.resolve(thirdStream);
+    assert.equal(await thirdResult, true);
+    assert.equal(
+      animationFrameCalls,
+      0,
+      'automatic analysis must wait for the secure relay claim',
+    );
+
+    scanner.finishPreclaimLifecycleTest();
+    assert.equal(
+      animationFrameCalls,
+      1,
+      'the relay claim must resume the open camera and start analysis',
+    );
+    scanner.stopCamera();
+    assert.equal(thirdStream.track.stopCalls, 1);
   } finally {
     for (const [name, descriptor] of originalGlobals) {
       if (descriptor) Object.defineProperty(globalThis, name, descriptor);

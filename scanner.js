@@ -17,7 +17,7 @@ import {
   portraitCaptureLayout,
   SCANNER_DOCUMENTS,
   updateHoldState,
-} from './scanner-core.js?v=20261006-direct-dashboard-v4';
+} from './scanner-core.js?v=20261006-direct-action-v5';
 import {
   callRelayWithOneRetry,
   createPhoneSession,
@@ -28,7 +28,7 @@ import {
   prepareEncryptedCapture,
   RelayError,
   waitForStaticSession,
-} from './relay-client.js?v=20261006-direct-dashboard-v4';
+} from './relay-client.js?v=20261006-direct-action-v5';
 
 const MAX_FINALIZE_ATTEMPTS = 5;
 const LIVE_ANALYSIS_INTERVAL_MS = 145;
@@ -47,7 +47,6 @@ const elements = Object.fromEntries(
     'dashboard',
     'dashboard-title',
     'document-list',
-    'start-selection',
     'camera-stage',
     'camera',
     'id-guide',
@@ -818,7 +817,7 @@ async function produceCapture() {
 }
 
 const STATUS_COPY = Object.freeze({
-  open: 'Auswählen',
+  open: 'Scannen',
   selected: 'Ausgewählt',
   'not-selected': 'Nicht gewählt',
   'in-progress': 'In Bearbeitung',
@@ -833,9 +832,7 @@ function renderDashboard() {
       ? selected
         ? scanStatus
         : 'not-selected'
-      : selected
-        ? 'selected'
-        : 'open';
+      : scanStatus;
     const card = elements.documentList.querySelector(
       `[data-document="${documentDefinition.id}"]`,
     );
@@ -844,20 +841,16 @@ function renderDashboard() {
       statusElement.textContent = STATUS_COPY[status];
       statusElement.className = `document-status is-${status}`;
       card.disabled =
-        busy || (selectionLocked && (!selected || scanStatus === 'complete'));
+        busy || scanStatus === 'complete' || (selectionLocked && !selected);
       card.classList.toggle('is-selected', selected);
       card.classList.toggle('is-not-selected', selectionLocked && !selected);
-      if (selectionLocked) card.removeAttribute('aria-pressed');
-      else card.setAttribute('aria-pressed', String(selected));
+      card.removeAttribute('aria-pressed');
       card.setAttribute(
         'aria-label',
         `${documentDefinition.title}, ${documentDefinition.description}: ${STATUS_COPY[status]}`,
       );
     }
   }
-  elements.startSelection.hidden = selectionLocked;
-  elements.startSelection.disabled =
-    busy || selectedDocumentIds.size === 0 || !sessionClaimed;
 }
 
 function showDashboard() {
@@ -877,7 +870,6 @@ function openDocument(documentId) {
   if (
     busy ||
     sessionClosed ||
-    !sessionClaimed ||
     protocolVersion !== '2' ||
     captureMode !== 'documents-v2' ||
     !selectionLocked ||
@@ -904,38 +896,30 @@ function openDocument(documentId) {
   void requestCamera();
 }
 
-function toggleDocumentSelection(documentId) {
-  if (busy || sessionClosed || selectionLocked) return;
-  const knownDocument = SCANNER_DOCUMENTS.some(
-    (candidate) => candidate.id === documentId,
-  );
-  if (!knownDocument) return;
-  if (selectedDocumentIds.has(documentId)) {
-    selectedDocumentIds.delete(documentId);
-  } else {
-    selectedDocumentIds.add(documentId);
-  }
-  renderDashboard();
-}
-
-function startSelectedDocuments() {
+function startDocument(documentId) {
   if (
     busy ||
     sessionClosed ||
-    !sessionClaimed ||
     protocolVersion !== '2' ||
     captureMode !== 'documents-v2' ||
-    selectionLocked ||
-    selectedDocumentIds.size === 0
+    selectionLocked
   ) {
     return;
   }
+  const documentDefinition = SCANNER_DOCUMENTS.find(
+    (candidate) => candidate.id === documentId,
+  );
+  if (
+    !documentDefinition ||
+    !nextDocumentSlot(documentDefinition, completedSlots)
+  ) {
+    return;
+  }
+  selectedDocumentIds.clear();
+  selectedDocumentIds.add(documentId);
   selectionLocked = true;
   renderDashboard();
-  const firstDocument = SCANNER_DOCUMENTS.find((candidate) =>
-    selectedDocumentIds.has(candidate.id),
-  );
-  if (firstDocument) openDocument(firstDocument.id);
+  openDocument(documentId);
 }
 
 function backToDashboard() {
@@ -947,7 +931,42 @@ function backToDashboard() {
   ) {
     return;
   }
+  const activeDocument = SCANNER_DOCUMENTS.find((documentDefinition) =>
+    selectedDocumentIds.has(documentDefinition.id),
+  );
+  if (
+    activeDocument &&
+    documentScanStatus(activeDocument, completedSlots) === 'open'
+  ) {
+    selectedDocumentIds.clear();
+    selectionLocked = false;
+  }
   showDashboard();
+}
+
+function resumeSelectedDocumentAfterClaim() {
+  if (state !== 'scanning') {
+    showDashboard();
+    return;
+  }
+  const activeDocument = SCANNER_DOCUMENTS.find((documentDefinition) =>
+    selectedDocumentIds.has(documentDefinition.id),
+  );
+  if (!activeDocument) {
+    selectionLocked = false;
+    showDashboard();
+    return;
+  }
+  const nextSlot = nextDocumentSlot(activeDocument, completedSlots);
+  if (!nextSlot) {
+    selectedDocumentIds.clear();
+    selectionLocked = false;
+    showDashboard();
+    return;
+  }
+  side = nextSlot;
+  applyProfileVisuals();
+  resumeOrRequestCamera();
 }
 
 function resumeOrRequestCamera() {
@@ -1020,6 +1039,7 @@ async function captureAutomatically() {
 function updateReviewControls() {
   elements.useCapture.disabled =
     busy ||
+    !sessionClaimed ||
     (!pendingConfirm &&
       !retryPayload &&
       (!acceptedCapture || !elements.consent.checked));
@@ -1397,7 +1417,7 @@ async function start() {
     sessionClaimed = true;
     elements.app.setAttribute('aria-busy', 'false');
     if (protocolVersion === '2') {
-      showDashboard();
+      resumeSelectedDocumentAfterClaim();
       return;
     }
     await cameraAttempt;
@@ -1417,9 +1437,8 @@ elements.documentList.addEventListener('click', (event) => {
   const card = event.target.closest('[data-document]');
   if (!(card instanceof HTMLButtonElement)) return;
   if (selectionLocked) openDocument(card.dataset.document);
-  else toggleDocumentSelection(card.dataset.document);
+  else startDocument(card.dataset.document);
 });
-elements.startSelection.addEventListener('click', startSelectedDocuments);
 elements.backToDashboard.addEventListener('click', backToDashboard);
 elements.torchToggle.addEventListener(
   'click',

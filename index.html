@@ -14,8 +14,11 @@
       content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:; media-src blob:; connect-src https://script.google.com https://*.googleusercontent.com; base-uri 'none'; form-action 'none'"
     />
     <title>Sicherheit Nord · Ausweisscan</title>
-    <link rel="stylesheet" href="./styles.css?v=20261006-direct-dashboard-v4" />
-    <script type="module" src="./scanner.js?v=20261006-direct-dashboard-v4"></script>
+    <link rel="stylesheet" href="./styles.css?v=20261006-direct-action-v5" />
+    <script
+      type="module"
+      src="./scanner.js?v=20261006-direct-action-v5"
+    ></script>
   </head>
   <body>
     <main id="app" class="app" aria-busy="true">
@@ -49,49 +52,36 @@
               class="document-card"
               type="button"
               data-document="identity-card"
-              aria-pressed="false"
             >
               <span class="document-copy">
                 <strong>Personalausweis</strong>
                 <small>2 Seiten</small>
               </span>
-              <span class="document-status is-open" data-status>Auswählen</span>
+              <span class="document-status is-open" data-status>Scannen</span>
             </button>
             <button
               class="document-card"
               type="button"
               data-document="passport"
-              aria-pressed="false"
             >
               <span class="document-copy">
                 <strong>Reisepass</strong>
                 <small>1 Seite</small>
               </span>
-              <span class="document-status is-open" data-status>Auswählen</span>
+              <span class="document-status is-open" data-status>Scannen</span>
             </button>
             <button
               class="document-card"
               type="button"
               data-document="health-card"
-              aria-pressed="false"
             >
               <span class="document-copy">
                 <strong>Krankenkassenkarte</strong>
                 <small>2 Seiten</small>
               </span>
-              <span class="document-status is-open" data-status>Auswählen</span>
+              <span class="document-status is-open" data-status>Scannen</span>
             </button>
           </div>
-
-          <button
-            id="start-selection"
-            class="primary start-selection"
-            type="button"
-            aria-label="Dokumentauswahl fertigstellen und Scan starten"
-            disabled
-          >
-            Fertig
-          </button>
         </div>
       </section>
 
