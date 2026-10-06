@@ -17,7 +17,7 @@ import {
   portraitCaptureLayout,
   SCANNER_DOCUMENTS,
   updateHoldState,
-} from './scanner-core.js?v=20261006-static-qr-v3';
+} from './scanner-core.js?v=20261006-direct-dashboard-v4';
 import {
   callRelayWithOneRetry,
   createPhoneSession,
@@ -28,7 +28,7 @@ import {
   prepareEncryptedCapture,
   RelayError,
   waitForStaticSession,
-} from './relay-client.js?v=20261006-static-qr-v3';
+} from './relay-client.js?v=20261006-direct-dashboard-v4';
 
 const MAX_FINALIZE_ATTEMPTS = 5;
 const LIVE_ANALYSIS_INTERVAL_MS = 145;
@@ -856,7 +856,8 @@ function renderDashboard() {
     }
   }
   elements.startSelection.hidden = selectionLocked;
-  elements.startSelection.disabled = busy || selectedDocumentIds.size === 0;
+  elements.startSelection.disabled =
+    busy || selectedDocumentIds.size === 0 || !sessionClaimed;
 }
 
 function showDashboard() {
@@ -876,6 +877,7 @@ function openDocument(documentId) {
   if (
     busy ||
     sessionClosed ||
+    !sessionClaimed ||
     protocolVersion !== '2' ||
     captureMode !== 'documents-v2' ||
     !selectionLocked ||
@@ -920,6 +922,9 @@ function startSelectedDocuments() {
   if (
     busy ||
     sessionClosed ||
+    !sessionClaimed ||
+    protocolVersion !== '2' ||
+    captureMode !== 'documents-v2' ||
     selectionLocked ||
     selectedDocumentIds.size === 0
   ) {
@@ -1323,6 +1328,15 @@ async function start() {
       parsedBootstrap = parseScannerBootstrap(bootstrapHash);
     } finally {
       bootstrapHash = '';
+    }
+    if (parsedBootstrap.version === '2' || parsedBootstrap.version === '3') {
+      // The document index is useful immediately and does not depend on relay
+      // data. Keep the secure discovery/claim in the background so a permanent
+      // QR never strands the applicant on a loading screen while the laptop is
+      // still publishing its current session.
+      protocolVersion = '2';
+      captureMode = 'documents-v2';
+      showDashboard();
     }
     const bootstrap = await resolveScannerBootstrap(parsedBootstrap);
     sessionId = bootstrap.sessionId;

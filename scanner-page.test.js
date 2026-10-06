@@ -13,8 +13,8 @@ test('standalone page contains a live camera guide without external code', async
   assert.match(html, /<video[^>]+autoplay[^>]+muted[^>]+playsinline/);
   assert.match(html, /id="id-guide"/);
   assert.match(html, /id="countdown"/);
-  assert.match(html, /scanner\.js\?v=20261006-static-qr-v3/);
-  assert.match(html, /styles\.css\?v=20261006-static-qr-v3/);
+  assert.match(html, /scanner\.js\?v=20261006-direct-dashboard-v4/);
+  assert.match(html, /styles\.css\?v=20261006-direct-dashboard-v4/);
   assert.match(html, /<title>Sicherheit Nord · Ausweisscan<\/title>/);
   assert.match(html, /class="guide-orientation">OBERKANTE</);
   assert.match(html, /Vorderseite Personalausweis/);
@@ -81,8 +81,8 @@ test('standalone page contains a live camera guide without external code', async
   );
   assert.match(script, /prepareEncryptedCapture/);
   assert.match(script, /protocolVersion,/);
-  assert.match(script, /scanner-core\.js\?v=20261006-static-qr-v3/);
-  assert.match(script, /relay-client\.js\?v=20261006-static-qr-v3/);
+  assert.match(script, /scanner-core\.js\?v=20261006-direct-dashboard-v4/);
+  assert.match(script, /relay-client\.js\?v=20261006-direct-dashboard-v4/);
   assert.match(script, /waitForStaticSession\(staticEndpoint, stationId/);
   assert.match(script, /decryptStaticBootstrap\(\{/);
   assert.match(script, /parseDiscoveredScannerBootstrap\(decrypted/);
@@ -104,6 +104,14 @@ test('standalone page contains a live camera guide without external code', async
   );
   assert.doesNotMatch(script, /finishDocumentSession/);
   assert.match(script, /showDashboard\(\)/);
+  assert.match(
+    script,
+    /parsedBootstrap\.version === '2'[\s\S]+?showDashboard\(\)[\s\S]+?await resolveScannerBootstrap\(parsedBootstrap\)/,
+  );
+  assert.match(
+    script,
+    /elements\.startSelection\.disabled =[\s\S]+?selectedDocumentIds\.size === 0 \|\| !sessionClaimed/,
+  );
   assert.match(script, /side = 'back'/);
   assert.match(script, /Rückseite Personalausweis/);
   assert.match(script, /acceptedCapture = result;[\s\S]{0,250}stopCamera\(\)/);
@@ -162,11 +170,11 @@ test('a dashboard return detaches an in-flight camera request from the next docu
   const source = await readFile(scannerUrl, 'utf8');
   const instrumentedSource = source
     .replace(
-      "from './scanner-core.js?v=20261006-static-qr-v3';",
+      "from './scanner-core.js?v=20261006-direct-dashboard-v4';",
       `from ${JSON.stringify(scannerCoreUrl)};`,
     )
     .replace(
-      "from './relay-client.js?v=20261006-static-qr-v3';",
+      "from './relay-client.js?v=20261006-direct-dashboard-v4';",
       `from ${JSON.stringify(relayClientUrl)};`,
     )
     .replace(
