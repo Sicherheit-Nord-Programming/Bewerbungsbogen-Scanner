@@ -102,6 +102,17 @@ button {
   line-height: 1.08;
 }
 
+/* These non-interactive view targets receive programmatic focus only so
+   assistive technology announces the new screen. Do not draw a browser focus
+   ring around the heading or the full-screen panels. */
+#dashboard-title:focus,
+#review-title:focus,
+#camera-stage:focus,
+#fatal:focus,
+#complete:focus {
+  outline: none;
+}
+
 .document-list {
   display: grid;
   grid-auto-rows: 1fr;
@@ -124,14 +135,20 @@ button {
   text-align: left;
   cursor: pointer;
   transition:
+    scale 90ms ease,
+    filter 90ms ease,
     transform 140ms ease,
     border-color 140ms ease,
     background-color 140ms ease,
     box-shadow 140ms ease;
 }
 
-.document-card:active {
-  transform: translateY(1px) scale(0.992);
+.document-card:not(:disabled):active,
+.primary:not(:disabled):active,
+.secondary:not(:disabled):active,
+.camera-action:not(:disabled):active {
+  scale: 0.97;
+  filter: brightness(0.88);
 }
 
 @media (hover: hover) {
@@ -252,6 +269,11 @@ button {
   font-size: 0.88rem;
   font-weight: 800;
   backdrop-filter: blur(8px);
+  cursor: pointer;
+  transition:
+    scale 90ms ease,
+    filter 90ms ease,
+    background-color 140ms ease;
 }
 
 .back-to-dashboard {
@@ -436,6 +458,10 @@ button {
   padding: 13px 18px;
   font-weight: 800;
   cursor: pointer;
+  transition:
+    scale 90ms ease,
+    filter 90ms ease,
+    background-color 140ms ease;
 }
 
 .primary {
