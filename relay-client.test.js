@@ -9,6 +9,7 @@ import {
   importCaptureKey,
   importStaticPairingKey,
   prepareEncryptedCapture,
+  uploadChunksConcurrently,
   waitForStaticSession,
 } from './relay-client.js';
 
@@ -52,6 +53,31 @@ test('HTTP relay uses the preflight-free envelope contract exactly', async () =>
       phoneSession: 'p',
     },
   });
+});
+
+test('terminal relay failures without a public server message request a fresh QR scan', async () => {
+  await assert.rejects(
+    callRelay(
+      'https://script.google.com/macros/s/example/exec',
+      'upload',
+      { sessionId: SESSION_ID },
+      {
+        fetchImpl: async () =>
+          Response.json({
+            schemaVersion: 1,
+            action: 'upload',
+            status: 'failed',
+            code: 'not-found',
+            retryable: false,
+          }),
+      },
+    ),
+    (error) =>
+      error?.code === 'not-found' &&
+      error?.retryable === false &&
+      error?.message ===
+        'Die Scan-Verbindung ist nicht mehr gültig. Bitte scannen Sie den QR-Code am Laptop erneut.',
+  );
 });
 
 test('static station discovery polls only while waiting and returns the available bootstrap', async () => {
@@ -296,4 +322,104 @@ test('version-2 capture binds the document slot into the v2 header and AAD', asy
   plaintext.fill(0);
   aad.fill(0);
   disposePreparedCapture(prepared);
+});
+
+test('chunk upload uses at most two workers and reports only completed chunks', async () => {
+  const gates = Array.from({ length: 5 }, () => Promise.withResolvers());
+  const started = [];
+  const progress = [];
+  let active = 0;
+  let maximumActive = 0;
+
+  const transfer = uploadChunksConcurrently(
+    ['zero', 'one', 'two', 'three', 'four'],
+    async (index, chunk) => {
+      started.push([index, chunk]);
+      active += 1;
+      maximumActive = Math.max(maximumActive, active);
+      await gates[index].promise;
+      active -= 1;
+    },
+    {
+      maxConcurrency: 2,
+      onProgress: (completed, total) => progress.push([completed, total]),
+    },
+  );
+
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(started, [
+    [0, 'zero'],
+    [1, 'one'],
+  ]);
+  assert.deepEqual(progress, []);
+
+  gates[1].resolve();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(started.at(-1), [2, 'two']);
+  assert.deepEqual(progress, [[1, 5]]);
+
+  gates[0].resolve();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(started.at(-1), [3, 'three']);
+  gates[2].resolve();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(started.at(-1), [4, 'four']);
+  gates[3].resolve();
+  gates[4].resolve();
+  await transfer;
+
+  assert.equal(maximumActive, 2);
+  assert.deepEqual(
+    started.map(([index]) => index).sort((left, right) => left - right),
+    [0, 1, 2, 3, 4],
+  );
+  assert.deepEqual(progress, [
+    [1, 5],
+    [2, 5],
+    [3, 5],
+    [4, 5],
+    [5, 5],
+  ]);
+});
+
+test('chunk upload stops scheduling after a failure and waits for its running sibling', async () => {
+  const sibling = Promise.withResolvers();
+  const failure = Promise.withResolvers();
+  const expectedError = new Error('upload failed');
+  const started = [];
+  let settled = false;
+
+  const observed = uploadChunksConcurrently(
+    ['zero', 'one', 'must-not-start'],
+    async (index) => {
+      started.push(index);
+      if (index === 0) await sibling.promise;
+      else if (index === 1) {
+        await failure.promise;
+        throw expectedError;
+      }
+    },
+    { maxConcurrency: 2 },
+  ).then(
+    () => {
+      settled = true;
+      return null;
+    },
+    (error) => {
+      settled = true;
+      return error;
+    },
+  );
+
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(started, [0, 1]);
+  failure.resolve();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(settled, false);
+  assert.deepEqual(started, [0, 1]);
+
+  sibling.resolve();
+  assert.equal(await observed, expectedError);
+  assert.equal(settled, true);
+  assert.deepEqual(started, [0, 1]);
 });

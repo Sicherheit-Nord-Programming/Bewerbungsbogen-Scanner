@@ -155,7 +155,9 @@ export async function callRelay(
     if (payload.status === 'failed') {
       throw new RelayError(
         payload.message ||
-          'Die sichere Sitzung konnte nicht fortgesetzt werden.',
+          (payload.retryable
+            ? 'Die sichere Übertragung wurde unterbrochen. Bitte erneut versuchen.'
+            : 'Die Scan-Verbindung ist nicht mehr gültig. Bitte scannen Sie den QR-Code am Laptop erneut.'),
         payload.retryable,
         payload.code,
       );
@@ -178,6 +180,48 @@ export async function callRelayWithOneRetry(
     if (!(error instanceof RelayError) || !error.retryable) throw error;
     return callRelay(endpoint, action, request, options);
   }
+}
+
+export async function uploadChunksConcurrently(
+  chunks,
+  uploadChunk,
+  { maxConcurrency = 2, onProgress = () => {} } = {},
+) {
+  if (!Array.isArray(chunks) || chunks.length < 1) {
+    throw new TypeError('Die verschlüsselte Aufnahme ist unvollständig.');
+  }
+  if (typeof uploadChunk !== 'function') {
+    throw new TypeError('Die Upload-Funktion ist ungültig.');
+  }
+  if (!Number.isSafeInteger(maxConcurrency) || maxConcurrency < 1) {
+    throw new TypeError('Die Upload-Parallelität ist ungültig.');
+  }
+  if (typeof onProgress !== 'function') {
+    throw new TypeError('Die Fortschrittsfunktion ist ungültig.');
+  }
+
+  let nextIndex = 0;
+  let completed = 0;
+  let firstError = null;
+  const workerCount = Math.min(maxConcurrency, chunks.length);
+
+  async function worker() {
+    while (!firstError) {
+      const index = nextIndex;
+      if (index >= chunks.length) return;
+      nextIndex += 1;
+      try {
+        await uploadChunk(index, chunks[index]);
+        completed += 1;
+        onProgress(completed, chunks.length);
+      } catch (error) {
+        firstError ??= error;
+      }
+    }
+  }
+
+  await Promise.all(Array.from({ length: workerCount }, () => worker()));
+  if (firstError) throw firstError;
 }
 
 function discoveryWait(milliseconds) {

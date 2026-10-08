@@ -17,7 +17,7 @@ import {
   portraitCaptureLayout,
   SCANNER_DOCUMENTS,
   updateHoldState,
-} from './scanner-core.js?v=20261008-scan-tolerance-v7';
+} from './scanner-core.js?v=20261008-transfer-reliability-v8';
 import {
   callRelayWithOneRetry,
   createPhoneSession,
@@ -27,8 +27,9 @@ import {
   importStaticPairingKey,
   prepareEncryptedCapture,
   RelayError,
+  uploadChunksConcurrently,
   waitForStaticSession,
-} from './relay-client.js?v=20261008-scan-tolerance-v7';
+} from './relay-client.js?v=20261008-transfer-reliability-v8';
 
 const MAX_FINALIZE_ATTEMPTS = 5;
 const LIVE_ANALYSIS_INTERVAL_MS = 145;
@@ -176,10 +177,7 @@ function setGuide(valid) {
 }
 
 function setProgress(percent) {
-  elements.uploadProgress.firstElementChild.style.width = `${Math.max(
-    0,
-    Math.min(100, percent),
-  )}%`;
+  elements.uploadProgress.firstElementChild.style.width = `${Math.max(0, Math.min(100, percent))}%`;
 }
 
 function wait(milliseconds) {
@@ -1049,18 +1047,29 @@ function updateReviewControls() {
 }
 
 async function transferPreparedPayload(prepared) {
-  for (let index = 0; index < prepared.chunks.length; index += 1) {
-    elements.reviewStatus.textContent = `Sichere Übertragung ${index + 1} von ${prepared.chunks.length} …`;
-    setProgress((index / prepared.chunks.length) * 90);
-    await callRelayWithOneRetry(endpoint, 'upload', {
-      sessionId,
-      phoneSession,
-      side: prepared.side,
-      index,
-      totalChunks: prepared.chunks.length,
-      chunkBase64: prepared.chunks[index],
-    });
-  }
+  setProgress(0);
+  elements.reviewStatus.textContent = 'Sichere Übertragung …';
+  await uploadChunksConcurrently(
+    prepared.chunks,
+    async (index, chunkBase64) => {
+      await callRelayWithOneRetry(endpoint, 'upload', {
+        sessionId,
+        phoneSession,
+        side: prepared.side,
+        index,
+        totalChunks: prepared.chunks.length,
+        chunkBase64,
+      });
+    },
+    {
+      maxConcurrency: 2,
+      onProgress: (completed, total) => {
+        setProgress((completed / total) * 90);
+      },
+    },
+  );
+  elements.reviewStatus.textContent = 'Übertragung wird abgeschlossen …';
+  setProgress(90);
   for (let attempt = 0; attempt < MAX_FINALIZE_ATTEMPTS; attempt += 1) {
     const response = await callRelayWithOneRetry(
       endpoint,
@@ -1105,16 +1114,20 @@ async function transferPreparedPayload(prepared) {
         'chunks-missing',
       );
     }
-    for (const index of missing) {
-      await callRelayWithOneRetry(endpoint, 'upload', {
-        sessionId,
-        phoneSession,
-        side: prepared.side,
-        index,
-        totalChunks: prepared.chunks.length,
-        chunkBase64: prepared.chunks[index],
-      });
-    }
+    await uploadChunksConcurrently(
+      missing,
+      async (_missingIndex, index) => {
+        await callRelayWithOneRetry(endpoint, 'upload', {
+          sessionId,
+          phoneSession,
+          side: prepared.side,
+          index,
+          totalChunks: prepared.chunks.length,
+          chunkBase64: prepared.chunks[index],
+        });
+      },
+      { maxConcurrency: 2 },
+    );
   }
 }
 
@@ -1153,9 +1166,17 @@ async function useCapture() {
   busy = true;
   updateReviewControls();
   elements.uploadProgress.hidden = pendingConfirm;
-  elements.reviewStatus.textContent = pendingConfirm
-    ? 'Abschluss wird sicher bestätigt …'
-    : 'Aufnahme wird auf diesem Handy verschlüsselt …';
+  if (pendingConfirm) {
+    elements.reviewStatus.textContent = 'Abschluss wird bestätigt …';
+    elements.useCapture.textContent = 'Wird bestätigt …';
+  } else if (retryPayload) {
+    elements.reviewStatus.textContent = 'Sichere Übertragung …';
+    elements.useCapture.textContent = 'Wird übertragen …';
+  } else {
+    elements.reviewStatus.textContent =
+      'Aufnahme wird auf diesem Handy verschlüsselt …';
+    elements.useCapture.textContent = 'Wird verschlüsselt …';
+  }
   try {
     if (pendingConfirm) {
       await confirmCompletedSession();
@@ -1175,7 +1196,7 @@ async function useCapture() {
       });
       acceptedCapture.bytes = null;
     }
-    elements.useCapture.textContent = 'Übertragung erneut versuchen';
+    elements.useCapture.textContent = 'Wird übertragen …';
     await transferPreparedPayload(retryPayload);
     const finalizedSide = retryPayload.side;
     clearRetryPayload();
@@ -1200,9 +1221,9 @@ async function useCapture() {
       }
       if (planStep.kind === 'confirm') {
         pendingConfirm = true;
-        elements.useCapture.textContent = 'Übertragung erneut versuchen';
+        elements.useCapture.textContent = 'Wird bestätigt …';
         elements.uploadProgress.hidden = true;
-        elements.reviewStatus.textContent = 'Übertragung wird bestätigt …';
+        elements.reviewStatus.textContent = 'Abschluss wird bestätigt …';
         await confirmCompletedSession();
         completeSession();
         return;
@@ -1227,9 +1248,9 @@ async function useCapture() {
       return;
     }
     pendingConfirm = true;
-    elements.useCapture.textContent = 'Abschluss erneut bestätigen';
+    elements.useCapture.textContent = 'Wird bestätigt …';
     elements.uploadProgress.hidden = true;
-    elements.reviewStatus.textContent = 'Abschluss wird sicher bestätigt …';
+    elements.reviewStatus.textContent = 'Abschluss wird bestätigt …';
     await confirmCompletedSession();
     completeSession();
   } catch (error) {
@@ -1252,7 +1273,9 @@ async function useCapture() {
       error instanceof Error
         ? error.message
         : 'Die sichere Übertragung wurde unterbrochen.';
-    elements.useCapture.textContent = 'Übertragung erneut versuchen';
+    elements.useCapture.textContent = pendingConfirm
+      ? 'Abschluss erneut bestätigen'
+      : 'Übertragung erneut versuchen';
   } finally {
     busy = false;
     elements.uploadProgress.hidden = true;
