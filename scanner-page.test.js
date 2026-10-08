@@ -13,15 +13,15 @@ test('standalone page contains a live camera guide without external code', async
   assert.match(html, /<video[^>]+autoplay[^>]+muted[^>]+playsinline/);
   assert.match(html, /id="id-guide"/);
   assert.match(html, /id="countdown"/);
-  assert.match(html, /scanner\.js\?v=20261008-scan-reliability-v6/);
-  assert.match(html, /styles\.css\?v=20261008-scan-reliability-v6/);
+  assert.match(html, /scanner\.js\?v=20261008-scan-tolerance-v7/);
+  assert.match(html, /styles\.css\?v=20261008-scan-tolerance-v7/);
   assert.match(html, /<title>Sicherheit Nord · Ausweisscan<\/title>/);
   assert.match(
     html,
     /rel="canonical" href="https:\/\/sicherheit-nord-ausweisscan\.web\.app\/"/,
   );
   assert.match(html, /<meta name="referrer" content="no-referrer" \/>/);
-  assert.match(html, /legacy-redirect\.js\?v=20261008-scan-reliability-v6/);
+  assert.match(html, /legacy-redirect\.js\?v=20261008-scan-tolerance-v7/);
   assert.match(html, /class="guide-orientation">OBERKANTE</);
   assert.match(html, /Vorderseite Personalausweis/);
   assert.match(html, /sicherheit-nord-logo\.png/);
@@ -97,8 +97,8 @@ test('standalone page contains a live camera guide without external code', async
   );
   assert.match(script, /prepareEncryptedCapture/);
   assert.match(script, /protocolVersion,/);
-  assert.match(script, /scanner-core\.js\?v=20261008-scan-reliability-v6/);
-  assert.match(script, /relay-client\.js\?v=20261008-scan-reliability-v6/);
+  assert.match(script, /scanner-core\.js\?v=20261008-scan-tolerance-v7/);
+  assert.match(script, /relay-client\.js\?v=20261008-scan-tolerance-v7/);
   assert.match(script, /waitForStaticSession\(staticEndpoint, stationId/);
   assert.match(script, /decryptStaticBootstrap\(\{/);
   assert.match(script, /parseDiscoveredScannerBootstrap\(decrypted/);
@@ -182,7 +182,7 @@ test('standalone page contains a live camera guide without external code', async
   );
   assert.match(
     styles,
-    /\.document-card:not\(:disabled\):active,[\s\S]+?\.primary:not\(:disabled\):active,[\s\S]+?\.secondary:not\(:disabled\):active,[\s\S]+?\.camera-action:not\(:disabled\):active\s*\{[\s\S]+?scale:\s*0\.97[\s\S]+?filter:\s*brightness\(0\.88\)/,
+    /\.document-card:not\(:disabled\):active,[\s\S]+?\.primary:not\(:disabled\):active,[\s\S]+?\.secondary:not\(:disabled\):active,[\s\S]+?\.camera-action:not\(:disabled\):active\s*\{[\s\S]+?scale:\s*0\.98[\s\S]+?filter:\s*brightness\(0\.95\)[\s\S]+?transition-duration:\s*70ms/,
   );
   assert.match(styles, /grid-auto-rows:\s*1fr/);
   assert.match(styles, /\.document-card:not\(:disabled\):hover/);
@@ -239,7 +239,10 @@ test('neutral Firebase hosting is isolated and old QR links retain their fragmen
   );
   assert.equal(headers['Cache-Control'], 'no-cache, no-store, must-revalidate');
   assert.match(headers['Content-Security-Policy'], /frame-ancestors 'none'/);
-  assert.equal(headers['Permissions-Policy'], 'camera=(self), microphone=(), geolocation=()');
+  assert.equal(
+    headers['Permissions-Policy'],
+    'camera=(self), microphone=(), geolocation=()',
+  );
   assert.equal(headers['Referrer-Policy'], 'no-referrer');
   assert.equal(headers['X-Content-Type-Options'], 'nosniff');
   assert.equal(headers['X-Frame-Options'], 'DENY');
@@ -258,11 +261,11 @@ test('a dashboard return detaches an in-flight camera request from the next docu
   const source = await readFile(scannerUrl, 'utf8');
   const instrumentedSource = source
     .replace(
-      "from './scanner-core.js?v=20261008-scan-reliability-v6';",
+      "from './scanner-core.js?v=20261008-scan-tolerance-v7';",
       `from ${JSON.stringify(scannerCoreUrl)};`,
     )
     .replace(
-      "from './relay-client.js?v=20261008-scan-reliability-v6';",
+      "from './relay-client.js?v=20261008-scan-tolerance-v7';",
       `from ${JSON.stringify(relayClientUrl)};`,
     )
     .replace(

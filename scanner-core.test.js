@@ -52,6 +52,9 @@ function frameFixture({
   width = 480,
   height = 640,
   card = { x: 35, y: 201, width: 410, height: 259 },
+  backgroundValue = 34,
+  cardValue = 210,
+  textValue = 64,
 } = {}) {
   const data = new Uint8ClampedArray(width * height * 4);
   for (let y = 0; y < height; y += 1) {
@@ -67,7 +70,7 @@ function frameFixture({
         y < card.y + card.height - 25 &&
         ((y - card.y) % 31 < 4 ||
           ((x - card.x) % 47 < 4 && x < card.x + card.width * 0.63));
-      const value = text ? 64 : inside ? 210 : 34;
+      const value = text ? textValue : inside ? cardValue : backgroundValue;
       const offset = (y * width + x) * 4;
       data[offset] = value;
       data[offset + 1] = value;
@@ -288,32 +291,46 @@ test('selected scan plan advances, returns to selection and confirms exactly at 
   );
 });
 
-test('finds a detailed ID-1 card inside the tolerant guide and rejects displacement', () => {
+test('finds a detailed ID-1 card without rejecting ordinary placement variation', () => {
   const guide = { x: 35, y: 201, width: 410, height: 259 };
   const accepted = analyzeFramePosition(frameFixture(), guide);
   assert.equal(accepted.positioned, true);
   assert.equal(accepted.strongEdges, 4);
   assert.match(accepted.reason, /Position passt/);
 
-  const displaced = analyzeFramePosition(
+  const ordinaryVariation = analyzeFramePosition(
     frameFixture({ card: { x: 132, y: 201, width: 340, height: 214 } }),
     guide,
   );
-  assert.equal(displaced.positioned, false);
+  assert.equal(ordinaryVariation.positioned, true);
 });
 
-test('accepts an ID-1 card held vertically inside the portrait guide', () => {
+test('accepts a low-contrast ID-1 card and anchors the hold to the visible guide', () => {
   const guide = { x: 110, y: 65, width: 260, height: 412 };
-  const accepted = analyzeFramePosition(frameFixture({ card: guide }), guide);
+  const accepted = analyzeFramePosition(
+    frameFixture({
+      card: guide,
+      backgroundValue: 160,
+      cardValue: 190,
+      textValue: 150,
+    }),
+    guide,
+  );
   assert.equal(accepted.positioned, true);
   assert.equal(accepted.strongEdges, 4);
   assert.ok(accepted.box.height > accepted.box.width);
+  assert.deepEqual(accepted.box, guide);
 
-  const displaced = analyzeFramePosition(
-    frameFixture({ card: { x: 175, y: 65, width: 260, height: 412 } }),
+  const emptyGuide = analyzeFramePosition(
+    frameFixture({
+      card: guide,
+      backgroundValue: 160,
+      cardValue: 160,
+      textValue: 160,
+    }),
     guide,
   );
-  assert.equal(displaced.positioned, false);
+  assert.equal(emptyGuide.positioned, false);
 });
 
 test('requires three real seconds of stable positioning and tolerates brief jitter', () => {
@@ -344,7 +361,11 @@ test('requires three real seconds of stable positioning and tolerates brief jitt
     'a noisy frame at the trigger boundary keeps the completed hold ready',
   );
 
-  const reset = updateHoldState(state, invalid, 13_500, frameSize);
+  const autofocusGrace = updateHoldState(state, invalid, 13_500, frameSize);
+  assert.equal(autofocusGrace.holding, true);
+  assert.equal(autofocusGrace.ready, true);
+
+  const reset = updateHoldState(state, invalid, 13_700, frameSize);
   assert.equal(reset.holding, false);
   assert.equal(reset.ready, false);
   assert.equal(reset.countdown, 3);

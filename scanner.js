@@ -17,7 +17,7 @@ import {
   portraitCaptureLayout,
   SCANNER_DOCUMENTS,
   updateHoldState,
-} from './scanner-core.js?v=20261008-scan-reliability-v6';
+} from './scanner-core.js?v=20261008-scan-tolerance-v7';
 import {
   callRelayWithOneRetry,
   createPhoneSession,
@@ -28,7 +28,7 @@ import {
   prepareEncryptedCapture,
   RelayError,
   waitForStaticSession,
-} from './relay-client.js?v=20261008-scan-reliability-v6';
+} from './relay-client.js?v=20261008-scan-tolerance-v7';
 
 const MAX_FINALIZE_ATTEMPTS = 5;
 const LIVE_ANALYSIS_INTERVAL_MS = 145;

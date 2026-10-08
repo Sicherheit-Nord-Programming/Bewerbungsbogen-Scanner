@@ -3,7 +3,7 @@ export const ID_CARD_PORTRAIT_ASPECT_RATIO = 1 / ID_CARD_ASPECT_RATIO;
 export const PASSPORT_ASPECT_RATIO = 125 / 88;
 export const PASSPORT_PORTRAIT_ASPECT_RATIO = 1 / PASSPORT_ASPECT_RATIO;
 export const HOLD_DURATION_MS = 3_000;
-export const INVALID_GRACE_MS = 350;
+export const INVALID_GRACE_MS = 650;
 export const MAX_STABLE_MOVEMENT = 0.035;
 
 export const CAPTURE_MIN_LONG_EDGE = 1_280;
@@ -424,8 +424,8 @@ export function analyzeFramePosition(image, guideRect) {
     gray.width,
     gray.height,
   );
-  const verticalTolerance = guide.width * 0.16;
-  const horizontalTolerance = guide.height * 0.19;
+  const verticalTolerance = guide.width * 0.2;
+  const horizontalTolerance = guide.height * 0.22;
   const verticalTop = guide.y + guide.height * 0.17;
   const verticalBottom = guide.y + guide.height * 0.83;
   const horizontalLeft = guide.x + guide.width * 0.14;
@@ -462,63 +462,24 @@ export function analyzeFramePosition(image, guideRect) {
     ),
   };
 
-  const edgeIsStrong = (edge) => edge.score >= 8.5 && edge.coverage >= 0.08;
+  const edgeIsStrong = (edge) => edge.score >= 7 && edge.coverage >= 0.06;
   const strongEdges = Object.values(edges).filter(edgeIsStrong).length;
-  const left = edgeIsStrong(edges.left) ? edges.left.position : guide.x;
-  const right = edgeIsStrong(edges.right)
-    ? edges.right.position
-    : guide.x + guide.width;
-  const top = edgeIsStrong(edges.top) ? edges.top.position : guide.y;
-  const bottom = edgeIsStrong(edges.bottom)
-    ? edges.bottom.position
-    : guide.y + guide.height;
-  const box = {
-    x: left,
-    y: top,
-    width: Math.max(1, right - left),
-    height: Math.max(1, bottom - top),
-  };
-
-  const widthScale = box.width / guide.width;
-  const heightScale = box.height / guide.height;
-  const ratio = box.width / box.height;
-  const centerX = box.x + box.width / 2;
-  const centerY = box.y + box.height / 2;
-  const guideCenterX = guide.x + guide.width / 2;
-  const guideCenterY = guide.y + guide.height / 2;
-  const centered =
-    Math.abs(centerX - guideCenterX) <= guide.width * 0.11 &&
-    Math.abs(centerY - guideCenterY) <= guide.height * 0.14;
-  const sized =
-    widthScale >= 0.74 &&
-    widthScale <= 1.16 &&
-    heightScale >= 0.72 &&
-    heightScale <= 1.2;
-  const portraitGuide = guide.height > guide.width;
-  const ratioFits = portraitGuide
-    ? ratio >= 1 / 1.78 && ratio <= 1 / 1.4
-    : ratio >= 1.4 && ratio <= 1.78;
-  const detail = interiorDetail(gray, box);
-  const hasContent = detail >= 0.012;
-  const positioned =
-    strongEdges >= 3 && centered && sized && ratioFits && hasContent;
+  // The final photo is cropped to the visible guide, not to this lightweight
+  // edge estimate. Printed lines and holograms can otherwise be mistaken for
+  // a card boundary and make an already well-positioned ID appear to jump.
+  // Keep the edges only as document-presence evidence and anchor the hold
+  // timer to the stable guide itself.
+  const detail = interiorDetail(gray, guide);
+  const hasContent = detail >= 0.006;
+  const positioned = strongEdges >= 3 && hasContent;
 
   let reason = 'Ausweis hochkant vollständig in den Rahmen halten.';
-  if (strongEdges >= 3 && !sized)
-    reason =
-      widthScale < 0.74 || heightScale < 0.72
-        ? 'Näher herangehen.'
-        : 'Etwas mehr Abstand halten.';
-  else if (strongEdges >= 3 && !centered)
-    reason = 'Ausweis mittig in den Rahmen bewegen.';
-  else if (strongEdges >= 3 && !ratioFits)
-    reason = 'Ausweis gerade und vollständig ausrichten.';
-  else if (strongEdges >= 3 && !hasContent)
+  if (strongEdges >= 3 && !hasContent)
     reason = 'Ausweis ruhig und gut beleuchtet halten.';
   else if (positioned) reason = 'Position passt. Bitte ruhig halten.';
 
   const resultBox = normalizedRect(
-    box,
+    guide,
     gray.width,
     gray.height,
     image.width,

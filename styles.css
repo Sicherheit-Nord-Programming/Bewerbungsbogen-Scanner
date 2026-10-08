@@ -135,8 +135,8 @@ button {
   text-align: left;
   cursor: pointer;
   transition:
-    scale 90ms ease,
-    filter 90ms ease,
+    scale 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    filter 180ms ease,
     transform 140ms ease,
     border-color 140ms ease,
     background-color 140ms ease,
@@ -147,8 +147,9 @@ button {
 .primary:not(:disabled):active,
 .secondary:not(:disabled):active,
 .camera-action:not(:disabled):active {
-  scale: 0.97;
-  filter: brightness(0.88);
+  scale: 0.98;
+  filter: brightness(0.95);
+  transition-duration: 70ms;
 }
 
 @media (hover: hover) {
@@ -271,8 +272,8 @@ button {
   backdrop-filter: blur(8px);
   cursor: pointer;
   transition:
-    scale 90ms ease,
-    filter 90ms ease,
+    scale 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    filter 180ms ease,
     background-color 140ms ease;
 }
 
@@ -459,8 +460,8 @@ button {
   font-weight: 800;
   cursor: pointer;
   transition:
-    scale 90ms ease,
-    filter 90ms ease,
+    scale 220ms cubic-bezier(0.22, 1, 0.36, 1),
+    filter 180ms ease,
     background-color 140ms ease;
 }
 
