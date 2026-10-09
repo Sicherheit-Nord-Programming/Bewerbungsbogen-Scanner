@@ -244,9 +244,31 @@ button {
   background: #edf1f4;
 }
 
+.document-status.is-not-scanned {
+  color: #687582;
+  background: #edf1f4;
+}
+
 .start-selection {
   margin-top: 18px;
   box-shadow: 0 4px 12px rgba(7, 88, 168, 0.18);
+}
+
+.document-finish {
+  margin-top: 18px;
+}
+
+.document-finish[hidden] {
+  display: none;
+}
+
+.dashboard-status {
+  min-height: 1.25em;
+  margin: 10px 0 0;
+  color: #526272;
+  font-size: 0.82rem;
+  line-height: 1.35;
+  text-align: center;
 }
 
 .camera-stage {

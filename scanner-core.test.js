@@ -203,12 +203,17 @@ test('document dashboard status requires complete documents and rejects half-fin
   const passport = SCANNER_DOCUMENTS.find(
     (documentDefinition) => documentDefinition.id === 'passport',
   );
+  const healthCard = SCANNER_DOCUMENTS.find(
+    (documentDefinition) => documentDefinition.id === 'health-card',
+  );
   assert.equal(documentScanStatus(identityCard, []), 'open');
   assert.equal(documentScanStatus(identityCard, ['id-front']), 'in-progress');
   assert.equal(
     documentScanStatus(identityCard, ['id-front', 'id-back']),
     'complete',
   );
+  assert.equal(documentScanStatus(passport, ['id-front', 'id-back']), 'open');
+  assert.equal(documentScanStatus(healthCard, ['id-front', 'id-back']), 'open');
   assert.equal(nextDocumentSlot(identityCard, []), 'id-front');
   assert.equal(nextDocumentSlot(identityCard, ['id-front']), 'id-back');
   assert.equal(nextDocumentSlot(identityCard, ['id-front', 'id-back']), null);
@@ -260,14 +265,14 @@ test('selected scan plan completes only after every chosen document is complete'
   );
 });
 
-test('selected scan plan advances, returns to selection and confirms exactly at its last slot', () => {
+test('selected scan plan advances within a document and always returns to the dashboard when it is complete', () => {
   assert.deepEqual(
     nextSelectedPlanStep(['identity-card'], ['id-front'], 'id-front'),
     { kind: 'capture', slot: 'id-back' },
   );
   assert.deepEqual(
     nextSelectedPlanStep(['identity-card'], ['id-front', 'id-back'], 'id-back'),
-    { kind: 'confirm' },
+    { kind: 'dashboard' },
   );
   assert.deepEqual(
     nextSelectedPlanStep(
@@ -283,7 +288,7 @@ test('selected scan plan advances, returns to selection and confirms exactly at 
       ['id-front', 'id-back', 'passport-data'],
       'passport-data',
     ),
-    { kind: 'confirm' },
+    { kind: 'dashboard' },
   );
   assert.deepEqual(
     nextSelectedPlanStep(['passport'], ['id-front'], 'id-front'),

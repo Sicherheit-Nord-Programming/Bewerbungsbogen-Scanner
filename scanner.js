@@ -1,6 +1,7 @@
 import {
   analyzeCaptureQuality,
   analyzeFramePosition,
+  canCompleteDocumentSession,
   coverSourceRect,
   createHoldState,
   documentScanStatus,
@@ -17,7 +18,7 @@ import {
   portraitCaptureLayout,
   SCANNER_DOCUMENTS,
   updateHoldState,
-} from './scanner-core.js?v=20261008-transfer-reliability-v8';
+} from './scanner-core.js?v=20261009-document-dashboard-v9';
 import {
   callRelayWithOneRetry,
   createPhoneSession,
@@ -29,7 +30,7 @@ import {
   RelayError,
   uploadChunksConcurrently,
   waitForStaticSession,
-} from './relay-client.js?v=20261008-transfer-reliability-v8';
+} from './relay-client.js?v=20261009-document-dashboard-v9';
 
 const MAX_FINALIZE_ATTEMPTS = 5;
 const LIVE_ANALYSIS_INTERVAL_MS = 145;
@@ -48,6 +49,9 @@ const elements = Object.fromEntries(
     'dashboard',
     'dashboard-title',
     'document-list',
+    'document-finish',
+    'finish-session',
+    'dashboard-status',
     'camera-stage',
     'camera',
     'id-guide',
@@ -818,19 +822,27 @@ const STATUS_COPY = Object.freeze({
   open: 'Scannen',
   selected: 'Ausgewählt',
   'not-selected': 'Nicht gewählt',
+  'not-scanned': 'Nicht gescannt',
   'in-progress': 'In Bearbeitung',
   complete: 'Abgeschlossen',
 });
 
 function renderDashboard() {
+  const hasCompletedDocument = SCANNER_DOCUMENTS.some(
+    (documentDefinition) =>
+      documentScanStatus(documentDefinition, completedSlots) === 'complete',
+  );
   for (const documentDefinition of SCANNER_DOCUMENTS) {
     const selected = selectedDocumentIds.has(documentDefinition.id);
     const scanStatus = documentScanStatus(documentDefinition, completedSlots);
-    const status = selectionLocked
-      ? selected
-        ? scanStatus
-        : 'not-selected'
-      : scanStatus;
+    const status =
+      sessionClosed && scanStatus === 'open'
+        ? 'not-scanned'
+        : selectionLocked
+          ? selected
+            ? scanStatus
+            : 'not-selected'
+          : scanStatus;
     const card = elements.documentList.querySelector(
       `[data-document="${documentDefinition.id}"]`,
     );
@@ -839,7 +851,11 @@ function renderDashboard() {
       statusElement.textContent = STATUS_COPY[status];
       statusElement.className = `document-status is-${status}`;
       card.disabled =
-        busy || scanStatus === 'complete' || (selectionLocked && !selected);
+        busy ||
+        pendingConfirm ||
+        sessionClosed ||
+        scanStatus === 'complete' ||
+        (selectionLocked && !selected);
       card.classList.toggle('is-selected', selected);
       card.classList.toggle('is-not-selected', selectionLocked && !selected);
       card.removeAttribute('aria-pressed');
@@ -849,6 +865,12 @@ function renderDashboard() {
       );
     }
   }
+  elements.documentFinish.hidden = !hasCompletedDocument;
+  elements.finishSession.disabled =
+    busy ||
+    sessionClosed ||
+    !sessionClaimed ||
+    !canCompleteDocumentSession(completedSlots);
 }
 
 function showDashboard() {
@@ -858,6 +880,7 @@ function showDashboard() {
   elements.review.hidden = true;
   elements.dashboard.hidden = false;
   elements.backToDashboard.hidden = true;
+  if (!sessionClosed) elements.dashboardStatus.textContent = '';
   state = 'dashboard';
   elements.app.setAttribute('aria-busy', 'false');
   renderDashboard();
@@ -867,6 +890,7 @@ function showDashboard() {
 function openDocument(documentId) {
   if (
     busy ||
+    pendingConfirm ||
     sessionClosed ||
     protocolVersion !== '2' ||
     captureMode !== 'documents-v2' ||
@@ -897,6 +921,7 @@ function openDocument(documentId) {
 function startDocument(documentId) {
   if (
     busy ||
+    pendingConfirm ||
     sessionClosed ||
     protocolVersion !== '2' ||
     captureMode !== 'documents-v2' ||
@@ -1154,6 +1179,34 @@ async function confirmCompletedSession() {
   pendingConfirm = false;
 }
 
+function advanceAfterFinalizedDocumentSlot(finalizedSide) {
+  completedSlots.add(finalizedSide);
+  const planStep = nextSelectedPlanStep(
+    selectedDocumentIds,
+    completedSlots,
+    finalizedSide,
+  );
+  if (planStep.kind === 'capture') {
+    clearAcceptedCapture();
+    side = planStep.slot;
+    applyProfileVisuals();
+    elements.review.hidden = true;
+    elements.cameraStage.hidden = false;
+    state = 'scanning';
+    elements.app.setAttribute('aria-busy', 'false');
+    elements.cameraStage.focus({ preventScroll: true });
+    resumeOrRequestCamera();
+    return;
+  }
+  if (planStep.kind !== 'dashboard') {
+    throw new Error('Der ausgewählte Scanplan ist ungültig.');
+  }
+  clearAcceptedCapture();
+  selectedDocumentIds.clear();
+  selectionLocked = false;
+  showDashboard();
+}
+
 async function useCapture() {
   if (busy || sessionClosed) return;
   if (
@@ -1201,38 +1254,7 @@ async function useCapture() {
     const finalizedSide = retryPayload.side;
     clearRetryPayload();
     if (protocolVersion === '2') {
-      completedSlots.add(finalizedSide);
-      const planStep = nextSelectedPlanStep(
-        selectedDocumentIds,
-        completedSlots,
-        finalizedSide,
-      );
-      if (planStep.kind === 'capture') {
-        clearAcceptedCapture();
-        side = planStep.slot;
-        applyProfileVisuals();
-        elements.review.hidden = true;
-        elements.cameraStage.hidden = false;
-        state = 'scanning';
-        elements.app.setAttribute('aria-busy', 'false');
-        elements.cameraStage.focus({ preventScroll: true });
-        resumeOrRequestCamera();
-        return;
-      }
-      if (planStep.kind === 'confirm') {
-        pendingConfirm = true;
-        elements.useCapture.textContent = 'Wird bestätigt …';
-        elements.uploadProgress.hidden = true;
-        elements.reviewStatus.textContent = 'Abschluss wird bestätigt …';
-        await confirmCompletedSession();
-        completeSession();
-        return;
-      }
-      if (planStep.kind !== 'dashboard') {
-        throw new Error('Der ausgewählte Scanplan ist ungültig.');
-      }
-      clearAcceptedCapture();
-      showDashboard();
+      advanceAfterFinalizedDocumentSlot(finalizedSide);
       return;
     }
     if (finalizedSide === 'front') {
@@ -1284,6 +1306,47 @@ async function useCapture() {
   }
 }
 
+async function finishDocumentSession() {
+  if (
+    busy ||
+    sessionClosed ||
+    !sessionClaimed ||
+    protocolVersion !== '2' ||
+    captureMode !== 'documents-v2' ||
+    !canCompleteDocumentSession(completedSlots)
+  ) {
+    return;
+  }
+
+  busy = true;
+  pendingConfirm = true;
+  elements.dashboardStatus.textContent = 'Übertragung wird abgeschlossen …';
+  elements.finishSession.textContent = 'Wird abgeschlossen …';
+  renderDashboard();
+
+  try {
+    await confirmCompletedSession();
+    completeSession(true);
+  } catch (error) {
+    if (error instanceof RelayError && !error.retryable) {
+      fail(error.message);
+      return;
+    }
+    elements.dashboardStatus.textContent =
+      error instanceof Error
+        ? error.message
+        : 'Die Übertragung konnte nicht abgeschlossen werden.';
+  } finally {
+    busy = false;
+    if (!sessionClosed) {
+      elements.finishSession.textContent = pendingConfirm
+        ? 'Abschluss erneut versuchen'
+        : 'Scan abschließen';
+      renderDashboard();
+    }
+  }
+}
+
 function repeatCapture() {
   if (busy || retryPayload || pendingConfirm || sessionClosed) return;
   clearAcceptedCapture();
@@ -1294,7 +1357,7 @@ function repeatCapture() {
   else resumeOrRequestCamera();
 }
 
-function completeSession() {
+function completeSession(returnToDashboard = false) {
   stopCamera();
   clearTimeout(expiryTimer);
   expiryTimer = 0;
@@ -1305,14 +1368,26 @@ function completeSession() {
   sessionId = '';
   endpoint = '';
   sessionClosed = true;
-  state = 'complete';
   elements.loading.hidden = true;
-  elements.dashboard.hidden = true;
   elements.cameraStage.hidden = true;
   elements.review.hidden = true;
   elements.fatal.hidden = true;
-  elements.complete.hidden = false;
   elements.app.setAttribute('aria-busy', 'false');
+  if (returnToDashboard) {
+    selectedDocumentIds.clear();
+    selectionLocked = false;
+    state = 'dashboard-complete';
+    elements.complete.hidden = true;
+    elements.dashboard.hidden = false;
+    elements.dashboardStatus.textContent = 'Übertragung abgeschlossen.';
+    elements.finishSession.textContent = 'Abgeschlossen';
+    renderDashboard();
+    elements.dashboardTitle.focus({ preventScroll: true });
+    return;
+  }
+  state = 'complete';
+  elements.dashboard.hidden = true;
+  elements.complete.hidden = false;
   elements.complete.focus({ preventScroll: true });
 }
 
@@ -1463,6 +1538,10 @@ elements.documentList.addEventListener('click', (event) => {
   else startDocument(card.dataset.document);
 });
 elements.backToDashboard.addEventListener('click', backToDashboard);
+elements.finishSession.addEventListener(
+  'click',
+  () => void finishDocumentSession(),
+);
 elements.torchToggle.addEventListener(
   'click',
   () => void setTorch(!torchEnabled),

@@ -13,15 +13,15 @@ test('standalone page contains a live camera guide without external code', async
   assert.match(html, /<video[^>]+autoplay[^>]+muted[^>]+playsinline/);
   assert.match(html, /id="id-guide"/);
   assert.match(html, /id="countdown"/);
-  assert.match(html, /scanner\.js\?v=20261008-transfer-reliability-v8/);
-  assert.match(html, /styles\.css\?v=20261008-transfer-reliability-v8/);
+  assert.match(html, /scanner\.js\?v=20261009-document-dashboard-v9/);
+  assert.match(html, /styles\.css\?v=20261009-document-dashboard-v9/);
   assert.match(html, /<title>Sicherheit Nord · Ausweisscan<\/title>/);
   assert.match(
     html,
     /rel="canonical" href="https:\/\/sicherheit-nord-ausweisscan\.web\.app\/"/,
   );
   assert.match(html, /<meta name="referrer" content="no-referrer" \/>/);
-  assert.match(html, /legacy-redirect\.js\?v=20261008-transfer-reliability-v8/);
+  assert.match(html, /legacy-redirect\.js\?v=20261009-document-dashboard-v9/);
   assert.match(html, /class="guide-orientation">OBERKANTE</);
   assert.match(html, /Vorderseite Personalausweis/);
   assert.match(html, /sicherheit-nord-logo\.png/);
@@ -34,10 +34,8 @@ test('standalone page contains a live camera guide without external code', async
     html,
     /id="start-selection"|Dokumentauswahl fertigstellen/,
   );
-  assert.doesNotMatch(
-    html,
-    /<button[^>]*>[\s\S]{0,80}\bFertig\b[\s\S]{0,20}<\/button>/,
-  );
+  assert.match(html, /id="finish-session"[\s\S]{0,80}Scan abschließen/);
+  assert.match(html, /id="dashboard-status"/);
   for (const documentId of ['identity-card', 'passport', 'health-card']) {
     const cardTag = html.match(
       new RegExp(`<button(?=[^>]*data-document="${documentId}")[^>]*>`),
@@ -51,7 +49,7 @@ test('standalone page contains a live camera guide without external code', async
   assert.equal((html.match(/<small>1 Seite<\/small>/g) ?? []).length, 1);
   assert.doesNotMatch(html, /Dokumentenübersicht|Wählen Sie ein Dokument aus/);
   assert.doesNotMatch(html, /Bitte das bereits begonnene Dokument/);
-  assert.doesNotMatch(html, /id="finish-session"|Scan abschließen/);
+  assert.doesNotMatch(html, /Zum Laptop zurückkehren|Laptop zurückgeben/);
   assert.doesNotMatch(html, /document-icon/);
   assert.match(html, /id="torch-toggle"/);
   assert.match(html, /id="back-to-dashboard"/);
@@ -97,8 +95,8 @@ test('standalone page contains a live camera guide without external code', async
   );
   assert.match(script, /prepareEncryptedCapture/);
   assert.match(script, /protocolVersion,/);
-  assert.match(script, /scanner-core\.js\?v=20261008-transfer-reliability-v8/);
-  assert.match(script, /relay-client\.js\?v=20261008-transfer-reliability-v8/);
+  assert.match(script, /scanner-core\.js\?v=20261009-document-dashboard-v9/);
+  assert.match(script, /relay-client\.js\?v=20261009-document-dashboard-v9/);
   assert.match(script, /uploadChunksConcurrently\(/);
   assert.match(script, /maxConcurrency:\s*2/);
   assert.match(script, /Sichere Übertragung …/);
@@ -127,9 +125,16 @@ test('standalone page contains a live camera guide without external code', async
   assert.match(script, /nextSelectedPlanStep\(/);
   assert.match(
     script,
+    /function advanceAfterFinalizedDocumentSlot\(finalizedSide\)[\s\S]+?selectedDocumentIds\.clear\(\)[\s\S]+?selectionLocked = false;[\s\S]+?showDashboard\(\)/,
+  );
+  assert.match(
+    script,
+    /async function finishDocumentSession\(\)[\s\S]+?canCompleteDocumentSession\(completedSlots\)[\s\S]+?await confirmCompletedSession\(\)[\s\S]+?completeSession\(true\)/,
+  );
+  assert.doesNotMatch(
+    script,
     /planStep\.kind === 'confirm'[\s\S]+?await confirmCompletedSession\(\)/,
   );
-  assert.doesNotMatch(script, /finishDocumentSession/);
   assert.match(script, /showDashboard\(\)/);
   assert.match(
     script,
@@ -272,17 +277,23 @@ test('a dashboard return detaches an in-flight camera request from the next docu
   const source = await readFile(scannerUrl, 'utf8');
   const instrumentedSource = source
     .replace(
-      "from './scanner-core.js?v=20261008-transfer-reliability-v8';",
+      "from './scanner-core.js?v=20261009-document-dashboard-v9';",
       `from ${JSON.stringify(scannerCoreUrl)};`,
     )
     .replace(
-      "from './relay-client.js?v=20261008-transfer-reliability-v8';",
+      "from './relay-client.js?v=20261009-document-dashboard-v9';",
       `from ${JSON.stringify(relayClientUrl)};`,
     )
     .replace(
       /\n(?:if \(!window\.__SN_SCANNER_REDIRECTING__\) )?void start\(\);\s*$/,
       `
-export { backToDashboard, requestCamera, startDocument, stopCamera };
+export {
+  advanceAfterFinalizedDocumentSlot,
+  backToDashboard,
+  requestCamera,
+  startDocument,
+  stopCamera,
+};
 export function prepareDashboardLifecycleTest() {
   protocolVersion = '2';
   captureMode = 'documents-v2';
@@ -302,6 +313,49 @@ export function preparePreclaimLifecycleTest() {
 export function finishPreclaimLifecycleTest() {
   sessionClaimed = true;
   resumeSelectedDocumentAfterClaim();
+}
+export function prepareCompletedIdentityDocumentTest() {
+  protocolVersion = '2';
+  captureMode = 'documents-v2';
+  sessionClaimed = true;
+  sessionClosed = false;
+  pendingConfirm = false;
+  selectionLocked = true;
+  selectedDocumentIds.clear();
+  selectedDocumentIds.add('identity-card');
+  completedSlots.clear();
+  completedSlots.add('id-front');
+  elements.dashboard.hidden = true;
+  elements.complete.hidden = true;
+  state = 'review';
+}
+export function preparePendingConfirmDashboardTest() {
+  protocolVersion = '2';
+  captureMode = 'documents-v2';
+  sessionClaimed = true;
+  sessionClosed = false;
+  pendingConfirm = true;
+  selectionLocked = false;
+  selectedDocumentIds.clear();
+  completedSlots.clear();
+  completedSlots.add('id-front');
+  completedSlots.add('id-back');
+  state = 'dashboard';
+  renderDashboard();
+}
+export function documentLifecycleState() {
+  return {
+    state,
+    sessionClosed,
+    pendingConfirm,
+    selectionLocked,
+    selectedDocumentIds: [...selectedDocumentIds],
+    completedSlots: [...completedSlots],
+    dashboardHidden: elements.dashboard.hidden,
+    completeHidden: elements.complete.hidden,
+    finishHidden: elements.documentFinish.hidden,
+    finishDisabled: elements.finishSession.disabled,
+  };
 }
 export function cameraLifecycleState() {
   return {
@@ -499,6 +553,41 @@ export function cameraLifecycleState() {
     );
     scanner.stopCamera();
     assert.equal(thirdStream.track.stopCalls, 1);
+
+    scanner.prepareCompletedIdentityDocumentTest();
+    scanner.advanceAfterFinalizedDocumentSlot('id-back');
+    assert.deepEqual(scanner.documentLifecycleState(), {
+      state: 'dashboard',
+      sessionClosed: false,
+      pendingConfirm: false,
+      selectionLocked: false,
+      selectedDocumentIds: [],
+      completedSlots: ['id-front', 'id-back'],
+      dashboardHidden: false,
+      completeHidden: true,
+      finishHidden: false,
+      finishDisabled: false,
+    });
+
+    scanner.preparePendingConfirmDashboardTest();
+    scanner.startDocument('passport');
+    assert.equal(
+      getUserMediaCalls,
+      3,
+      'an uncertain final confirmation must block every new camera request',
+    );
+    assert.deepEqual(scanner.documentLifecycleState(), {
+      state: 'dashboard',
+      sessionClosed: false,
+      pendingConfirm: true,
+      selectionLocked: false,
+      selectedDocumentIds: [],
+      completedSlots: ['id-front', 'id-back'],
+      dashboardHidden: false,
+      completeHidden: true,
+      finishHidden: false,
+      finishDisabled: false,
+    });
   } finally {
     for (const [name, descriptor] of originalGlobals) {
       if (descriptor) Object.defineProperty(globalThis, name, descriptor);

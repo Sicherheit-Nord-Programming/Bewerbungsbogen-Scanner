@@ -100,9 +100,6 @@ export function nextSelectedPlanStep(
   if (!activeDocument) return { kind: 'invalid' };
   const nextSlot = nextDocumentSlot(activeDocument, completedSlots);
   if (nextSlot) return { kind: 'capture', slot: nextSlot };
-  if (selectedDocumentPlanComplete(selectedIds, completedSlots)) {
-    return { kind: 'confirm' };
-  }
   return { kind: 'dashboard' };
 }
 
