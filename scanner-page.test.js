@@ -13,15 +13,15 @@ test('standalone page contains a live camera guide without external code', async
   assert.match(html, /<video[^>]+autoplay[^>]+muted[^>]+playsinline/);
   assert.match(html, /id="id-guide"/);
   assert.match(html, /id="countdown"/);
-  assert.match(html, /scanner\.js\?v=20261009-document-dashboard-v9/);
-  assert.match(html, /styles\.css\?v=20261009-document-dashboard-v9/);
+  assert.match(html, /scanner\.js\?v=20261009-tax-id-v10/);
+  assert.match(html, /styles\.css\?v=20261009-tax-id-v10/);
   assert.match(html, /<title>Sicherheit Nord · Ausweisscan<\/title>/);
   assert.match(
     html,
     /rel="canonical" href="https:\/\/sicherheit-nord-ausweisscan\.web\.app\/"/,
   );
   assert.match(html, /<meta name="referrer" content="no-referrer" \/>/);
-  assert.match(html, /legacy-redirect\.js\?v=20261009-document-dashboard-v9/);
+  assert.match(html, /legacy-redirect\.js\?v=20261009-tax-id-v10/);
   assert.match(html, /class="guide-orientation">OBERKANTE</);
   assert.match(html, /Vorderseite Personalausweis/);
   assert.match(html, /sicherheit-nord-logo\.png/);
@@ -29,6 +29,14 @@ test('standalone page contains a live camera guide without external code', async
   assert.match(html, /data-document="identity-card"/);
   assert.match(html, /data-document="passport"/);
   assert.match(html, /data-document="health-card"/);
+  assert.match(html, /data-document="tax-id"/);
+  assert.match(html, /id="tax-id-stage"/);
+  assert.match(html, /id="tax-id-type"[\s\S]{0,100}Eingeben/);
+  assert.match(html, /id="tax-id-photo"[\s\S]{0,120}Dokument fotografieren/);
+  assert.match(
+    html,
+    /id="tax-id-input"[\s\S]{0,160}inputmode="numeric"[\s\S]{0,160}autocomplete="off"/,
+  );
   assert.match(html, /<h1 id="dashboard-title"[^>]*>Dokumentauswahl<\/h1>/);
   assert.doesNotMatch(
     html,
@@ -36,14 +44,19 @@ test('standalone page contains a live camera guide without external code', async
   );
   assert.match(html, /id="finish-session"[\s\S]{0,80}Scan abschließen/);
   assert.match(html, /id="dashboard-status"/);
-  for (const documentId of ['identity-card', 'passport', 'health-card']) {
+  for (const documentId of [
+    'identity-card',
+    'tax-id',
+    'passport',
+    'health-card',
+  ]) {
     const cardTag = html.match(
       new RegExp(`<button(?=[^>]*data-document="${documentId}")[^>]*>`),
     )?.[0];
     assert.ok(cardTag);
     assert.doesNotMatch(cardTag, /aria-pressed=/);
   }
-  assert.equal((html.match(/>Scannen<\/span>/g) ?? []).length, 3);
+  assert.equal((html.match(/>Scannen<\/span>/g) ?? []).length, 4);
   assert.doesNotMatch(html, /Auswahl scannen|>Offen<\/span>/);
   assert.equal((html.match(/<small>2 Seiten<\/small>/g) ?? []).length, 2);
   assert.equal((html.match(/<small>1 Seite<\/small>/g) ?? []).length, 1);
@@ -95,8 +108,12 @@ test('standalone page contains a live camera guide without external code', async
   );
   assert.match(script, /prepareEncryptedCapture/);
   assert.match(script, /protocolVersion,/);
-  assert.match(script, /scanner-core\.js\?v=20261009-document-dashboard-v9/);
-  assert.match(script, /relay-client\.js\?v=20261009-document-dashboard-v9/);
+  assert.match(script, /scanner-core\.js\?v=20261009-tax-id-v10/);
+  assert.match(script, /relay-client\.js\?v=20261009-tax-id-v10/);
+  assert.match(script, /function submitTypedTaxId\(event\)/);
+  assert.match(script, /isPlausibleTaxId\(normalized\)/);
+  assert.match(script, /function normalizeTaxIdPhoto\(file\)/);
+  assert.match(script, /documentSetVersion/);
   assert.match(script, /uploadChunksConcurrently\(/);
   assert.match(script, /maxConcurrency:\s*2/);
   assert.match(script, /Sichere Übertragung …/);
@@ -277,11 +294,11 @@ test('a dashboard return detaches an in-flight camera request from the next docu
   const source = await readFile(scannerUrl, 'utf8');
   const instrumentedSource = source
     .replace(
-      "from './scanner-core.js?v=20261009-document-dashboard-v9';",
+      "from './scanner-core.js?v=20261009-tax-id-v10';",
       `from ${JSON.stringify(scannerCoreUrl)};`,
     )
     .replace(
-      "from './relay-client.js?v=20261009-document-dashboard-v9';",
+      "from './relay-client.js?v=20261009-tax-id-v10';",
       `from ${JSON.stringify(relayClientUrl)};`,
     )
     .replace(

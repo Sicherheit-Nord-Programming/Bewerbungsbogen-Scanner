@@ -13,6 +13,7 @@ import {
   guideCropInSource,
   ID_CARD_ASPECT_RATIO,
   ID_CARD_PORTRAIT_ASPECT_RATIO,
+  isPlausibleTaxId,
   nextDocumentSlot,
   nextSelectedPlanStep,
   normalizedIdCrop,
@@ -21,7 +22,9 @@ import {
   PASSPORT_ASPECT_RATIO,
   portraitCaptureLayout,
   SCANNER_DOCUMENTS,
+  scannerDocumentsForVersion,
   selectedDocumentPlanComplete,
+  normalizeTaxId,
   updateHoldState,
 } from './scanner-core.js';
 
@@ -168,7 +171,24 @@ test('validates the decrypted static bootstrap as the discovered v2 session', ()
   assert.equal(parsed.sessionId, sessionId);
   assert.equal(parsed.uploadCapability, 'A'.repeat(43));
   assert.equal(parsed.keyBytes.length, 32);
+  assert.equal(parsed.documentSetVersion, 2);
   parsed.keyBytes.fill(0);
+
+  const versioned = parseDiscoveredScannerBootstrap(
+    { ...payload, documentSetVersion: 3 },
+    { sessionId, endpoint },
+  );
+  assert.equal(versioned.documentSetVersion, 3);
+  versioned.keyBytes.fill(0);
+
+  assert.throws(
+    () =>
+      parseDiscoveredScannerBootstrap(
+        { ...payload, documentSetVersion: 4 },
+        { sessionId, endpoint },
+      ),
+    /ungültig/,
+  );
 
   assert.throws(
     () =>
@@ -206,6 +226,9 @@ test('document dashboard status requires complete documents and rejects half-fin
   const healthCard = SCANNER_DOCUMENTS.find(
     (documentDefinition) => documentDefinition.id === 'health-card',
   );
+  const taxId = SCANNER_DOCUMENTS.find(
+    (documentDefinition) => documentDefinition.id === 'tax-id',
+  );
   assert.equal(documentScanStatus(identityCard, []), 'open');
   assert.equal(documentScanStatus(identityCard, ['id-front']), 'in-progress');
   assert.equal(
@@ -214,6 +237,8 @@ test('document dashboard status requires complete documents and rejects half-fin
   );
   assert.equal(documentScanStatus(passport, ['id-front', 'id-back']), 'open');
   assert.equal(documentScanStatus(healthCard, ['id-front', 'id-back']), 'open');
+  assert.equal(documentScanStatus(taxId, []), 'open');
+  assert.equal(documentScanStatus(taxId, ['tax-id']), 'complete');
   assert.equal(nextDocumentSlot(identityCard, []), 'id-front');
   assert.equal(nextDocumentSlot(identityCard, ['id-front']), 'id-back');
   assert.equal(nextDocumentSlot(identityCard, ['id-front', 'id-back']), null);
@@ -225,6 +250,31 @@ test('document dashboard status requires complete documents and rejects half-fin
     false,
   );
   assert.equal(documentScanStatus(passport, ['passport-data']), 'complete');
+});
+
+test('legacy document sets hide Steuer-ID while version 3 exposes one logical slot', () => {
+  assert.deepEqual(
+    scannerDocumentsForVersion(2).map(({ id }) => id),
+    ['identity-card', 'passport', 'health-card'],
+  );
+  assert.deepEqual(
+    scannerDocumentsForVersion(3).map(({ id }) => id),
+    ['identity-card', 'passport', 'health-card', 'tax-id'],
+  );
+  assert.deepEqual(SCANNER_DOCUMENTS.find(({ id }) => id === 'tax-id').slots, [
+    'tax-id',
+  ]);
+});
+
+test('normalizes and checks German Steuer-ID input without exposing a correction', () => {
+  assert.equal(normalizeTaxId('86 095 742 719'), '86095742719');
+  assert.equal(normalizeTaxId('86\u00a0095-742\u202f719'), '86095742719');
+  assert.equal(normalizeTaxId('86/095/742/719'), null);
+  assert.equal(isPlausibleTaxId('86 095 742 719'), true);
+  assert.equal(isPlausibleTaxId('86095742718'), false);
+  assert.equal(isPlausibleTaxId('06095742719'), false);
+  assert.equal(isPlausibleTaxId('12345678903'), false);
+  assert.equal(isPlausibleTaxId('11123456789'), false);
 });
 
 test('selected scan plan completes only after every chosen document is complete', () => {

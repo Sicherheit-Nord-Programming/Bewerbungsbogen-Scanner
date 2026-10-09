@@ -23,15 +23,9 @@
       content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:; media-src blob:; connect-src https://script.google.com https://*.googleusercontent.com; base-uri 'none'; form-action 'none'"
     />
     <title>Sicherheit Nord · Ausweisscan</title>
-    <script src="./legacy-redirect.js?v=20261009-document-dashboard-v9"></script>
-    <link
-      rel="stylesheet"
-      href="./styles.css?v=20261009-document-dashboard-v9"
-    />
-    <script
-      type="module"
-      src="./scanner.js?v=20261009-document-dashboard-v9"
-    ></script>
+    <script src="./legacy-redirect.js?v=20261009-tax-id-v10"></script>
+    <link rel="stylesheet" href="./styles.css?v=20261009-tax-id-v10" />
+    <script type="module" src="./scanner.js?v=20261009-tax-id-v10"></script>
   </head>
   <body>
     <main id="app" class="app" aria-busy="true">
@@ -73,6 +67,19 @@
               <span class="document-status is-open" data-status>Scannen</span>
             </button>
             <button
+              id="tax-id-card"
+              class="document-card"
+              type="button"
+              data-document="tax-id"
+              hidden
+            >
+              <span class="document-copy">
+                <strong>Steuer-ID</strong>
+                <small>Eingeben oder fotografieren</small>
+              </span>
+              <span class="document-status is-open" data-status>Scannen</span>
+            </button>
+            <button
               class="document-card"
               type="button"
               data-document="passport"
@@ -106,6 +113,66 @@
               aria-live="polite"
             ></p>
           </div>
+        </div>
+      </section>
+
+      <section
+        id="tax-id-stage"
+        class="dashboard tax-id-stage"
+        hidden
+        aria-labelledby="tax-id-title"
+      >
+        <div class="dashboard-card tax-id-card">
+          <img
+            class="brand-logo"
+            src="./sicherheit-nord-logo.png"
+            alt="Sicherheit Nord"
+          />
+          <button id="tax-id-back" class="tax-id-back" type="button">
+            Übersicht
+          </button>
+          <div class="dashboard-heading">
+            <h1 id="tax-id-title" tabindex="-1">Steuer-ID</h1>
+            <p>11-stellige Steuer-ID – nicht die Steuernummer</p>
+          </div>
+
+          <div id="tax-id-methods" class="tax-id-methods">
+            <button id="tax-id-type" class="primary" type="button">
+              Eingeben
+            </button>
+            <button id="tax-id-photo" class="secondary" type="button">
+              Dokument fotografieren
+            </button>
+          </div>
+
+          <form id="tax-id-form" class="tax-id-form" hidden novalidate>
+            <label for="tax-id-input">11-stellige Steuer-ID</label>
+            <input
+              id="tax-id-input"
+              type="text"
+              inputmode="numeric"
+              autocomplete="off"
+              autocapitalize="none"
+              spellcheck="false"
+              enterkeyhint="done"
+              maxlength="18"
+              aria-describedby="tax-id-error"
+            />
+            <p id="tax-id-error" class="tax-id-error" aria-live="polite"></p>
+            <button id="tax-id-submit" class="primary" type="submit">
+              Übernehmen
+            </button>
+          </form>
+
+          <input
+            id="tax-id-photo-input"
+            class="visually-hidden"
+            type="file"
+            accept="image/*"
+            capture="environment"
+            tabindex="-1"
+            aria-hidden="true"
+          />
         </div>
       </section>
 
@@ -165,7 +232,9 @@
           </div>
           <label class="consent">
             <input id="consent" type="checkbox" />
-            <span>Angaben lesbar – Dokumentenkopie bestätigen.</span>
+            <span id="consent-label"
+              >Angaben lesbar – Dokumentenkopie bestätigen.</span
+            >
           </label>
           <button id="use-capture" class="primary" type="button" disabled>
             Aufnahme verwenden

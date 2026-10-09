@@ -44,7 +44,71 @@ export const SCANNER_DOCUMENTS = Object.freeze([
     description: 'Vorder- und Rückseite',
     slots: Object.freeze(['health-front', 'health-back']),
   }),
+  Object.freeze({
+    id: 'tax-id',
+    title: 'Steuer-ID',
+    description: 'Eingeben oder fotografieren',
+    slots: Object.freeze(['tax-id']),
+    documentSetVersion: 3,
+  }),
 ]);
+
+export function scannerDocumentsForVersion(documentSetVersion = 2) {
+  return SCANNER_DOCUMENTS.filter(
+    (documentDefinition) =>
+      (documentDefinition.documentSetVersion || 2) <= documentSetVersion,
+  );
+}
+
+export function normalizeTaxId(value) {
+  const raw = String(value ?? '');
+  if (/[^0-9\s\u00a0\u2009\u202f-]/u.test(raw)) return null;
+  return raw.replace(/[\s\u00a0\u2009\u202f-]/gu, '');
+}
+
+export function isPlausibleTaxId(value) {
+  const normalized = normalizeTaxId(value);
+  if (!normalized || !/^[1-9][0-9]{10}$/.test(normalized)) return false;
+
+  const firstTen = normalized.slice(0, 10);
+  const counts = Array.from({ length: 10 }, () => 0);
+  for (const digit of firstTen) counts[Number(digit)] += 1;
+  const repeated = counts
+    .map((count, digit) => ({ count, digit }))
+    .filter(({ count }) => count === 2 || count === 3);
+  if (repeated.length !== 1) return false;
+  if (
+    counts.some(
+      (count, digit) =>
+        digit !== repeated[0].digit && count !== 0 && count !== 1,
+    )
+  ) {
+    return false;
+  }
+  const absentDigits = counts.filter((count) => count === 0).length;
+  if (
+    (repeated[0].count === 2 && absentDigits !== 1) ||
+    (repeated[0].count === 3 && absentDigits !== 2)
+  ) {
+    return false;
+  }
+  if (
+    repeated[0].count === 3 &&
+    firstTen.includes(String(repeated[0].digit).repeat(2))
+  ) {
+    return false;
+  }
+
+  let product = 10;
+  for (const digit of firstTen) {
+    let sum = (Number(digit) + product) % 10;
+    if (sum === 0) sum = 10;
+    product = (2 * sum) % 11;
+  }
+  let checkDigit = 11 - product;
+  if (checkDigit === 10) checkDigit = 0;
+  return checkDigit === Number(normalized[10]);
+}
 
 export function documentScanStatus(documentDefinition, completedSlots) {
   const completed = new Set(completedSlots);
@@ -221,14 +285,31 @@ export function parseDiscoveredScannerBootstrap(
     throw new Error('Die sichere Sitzung ist unvollständig oder ungültig.');
   }
   const expectedFields = ['e', 'k', 's', 'u', 'v'];
+  const expectedVersionedFields = [
+    ...expectedFields,
+    'documentSetVersion',
+  ].sort();
   const actualFields = Object.keys(value).sort();
+  const fieldsMatch =
+    (actualFields.length === expectedFields.length &&
+      actualFields.every((field, index) => field === expectedFields[index])) ||
+    (actualFields.length === expectedVersionedFields.length &&
+      actualFields.every(
+        (field, index) => field === expectedVersionedFields[index],
+      ));
   if (
-    actualFields.length !== expectedFields.length ||
-    actualFields.some((field, index) => field !== expectedFields[index])
+    !fieldsMatch ||
+    (value.documentSetVersion !== undefined && value.documentSetVersion !== 3)
   ) {
     throw new Error('Die sichere Sitzung ist unvollständig oder ungültig.');
   }
-  const parsed = parseOneUseBootstrap(value);
+  const parsed = parseOneUseBootstrap({
+    v: value.v,
+    s: value.s,
+    u: value.u,
+    k: value.k,
+    e: value.e,
+  });
   if (
     parsed.version !== '2' ||
     parsed.sessionId !== expectedSessionId ||
@@ -237,7 +318,10 @@ export function parseDiscoveredScannerBootstrap(
     parsed.keyBytes.fill(0);
     throw new Error('Die sichere Sitzung ist unvollständig oder ungültig.');
   }
-  return parsed;
+  return {
+    ...parsed,
+    documentSetVersion: value.documentSetVersion === 3 ? 3 : 2,
+  };
 }
 
 function assertImageShape(image) {

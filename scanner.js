@@ -9,16 +9,18 @@ import {
   enhanceScanPixels,
   guideCropInSource,
   ID_CARD_ASPECT_RATIO,
+  isPlausibleTaxId,
   nextDocumentSlot,
   nextSelectedPlanStep,
+  normalizeTaxId,
   normalizedIdCrop,
   parseDiscoveredScannerBootstrap,
   parseScannerBootstrap,
   PASSPORT_ASPECT_RATIO,
   portraitCaptureLayout,
-  SCANNER_DOCUMENTS,
+  scannerDocumentsForVersion,
   updateHoldState,
-} from './scanner-core.js?v=20261009-document-dashboard-v9';
+} from './scanner-core.js?v=20261009-tax-id-v10';
 import {
   callRelayWithOneRetry,
   createPhoneSession,
@@ -30,7 +32,7 @@ import {
   RelayError,
   uploadChunksConcurrently,
   waitForStaticSession,
-} from './relay-client.js?v=20261009-document-dashboard-v9';
+} from './relay-client.js?v=20261009-tax-id-v10';
 
 const MAX_FINALIZE_ATTEMPTS = 5;
 const LIVE_ANALYSIS_INTERVAL_MS = 145;
@@ -41,6 +43,8 @@ const VIDEO_FALLBACK_MIN_SHORT_EDGE = 400;
 const VIDEO_FALLBACK_MIN_SHARPNESS = 12;
 const VIDEO_FALLBACK_OUTPUT_LONG_EDGE = 1_600;
 const CAPTURE_VIBRATION_PATTERN = [80, 40, 120];
+const TAX_ID_PAGE_WIDTH = 1_400;
+const TAX_ID_PAGE_HEIGHT = 1_980;
 
 const elements = Object.fromEntries(
   [
@@ -52,6 +56,18 @@ const elements = Object.fromEntries(
     'document-finish',
     'finish-session',
     'dashboard-status',
+    'tax-id-card',
+    'tax-id-stage',
+    'tax-id-title',
+    'tax-id-back',
+    'tax-id-methods',
+    'tax-id-type',
+    'tax-id-photo',
+    'tax-id-form',
+    'tax-id-input',
+    'tax-id-error',
+    'tax-id-submit',
+    'tax-id-photo-input',
     'camera-stage',
     'camera',
     'id-guide',
@@ -65,6 +81,7 @@ const elements = Object.fromEntries(
     'review-title',
     'preview',
     'consent',
+    'consent-label',
     'use-capture',
     'repeat-capture',
     'upload-progress',
@@ -88,6 +105,7 @@ let sessionClaimed = false;
 let sessionClosed = false;
 let protocolVersion = '1';
 let captureMode = 'identity-v1';
+let documentSetVersion = 2;
 let side = 'front';
 const completedSlots = new Set();
 const selectedDocumentIds = new Set();
@@ -149,7 +167,16 @@ const SLOT_PROFILES = Object.freeze({
     aspectRatio: ID_CARD_ASPECT_RATIO,
     instruction: 'Krankenkassenkarte hochkant in den Rahmen halten.',
   },
+  'tax-id': {
+    title: 'Steuerliche Identifikationsnummer',
+    aspectRatio: TAX_ID_PAGE_WIDTH / TAX_ID_PAGE_HEIGHT,
+    instruction: 'Nur den Bereich mit der Steuer-ID fotografieren.',
+  },
 });
+
+function availableDocuments() {
+  return scannerDocumentsForVersion(documentSetVersion);
+}
 
 function activeProfile() {
   return SLOT_PROFILES[side] || SLOT_PROFILES.front;
@@ -161,8 +188,10 @@ function sideTitle() {
 
 function applyProfileVisuals() {
   const passport = activeProfile().aspectRatio === PASSPORT_ASPECT_RATIO;
+  const taxId = side === 'tax-id';
   elements.idGuide.classList.toggle('is-passport', passport);
   elements.preview.parentElement.classList.toggle('is-passport', passport);
+  elements.preview.parentElement.classList.toggle('is-tax-id', taxId);
   elements.sideLabel.textContent = sideTitle();
   elements.reviewTitle.textContent = sideTitle();
 }
@@ -181,7 +210,10 @@ function setGuide(valid) {
 }
 
 function setProgress(percent) {
-  elements.uploadProgress.firstElementChild.style.width = `${Math.max(0, Math.min(100, percent))}%`;
+  elements.uploadProgress.firstElementChild.style.width = `${Math.max(
+    0,
+    Math.min(100, percent),
+  )}%`;
 }
 
 function wait(milliseconds) {
@@ -321,6 +353,7 @@ function disposeSensitiveState() {
   completedSlots.clear();
   selectedDocumentIds.clear();
   selectionLocked = false;
+  clearTaxIdEntry();
   elements.analysisCanvas.width = 0;
   elements.analysisCanvas.height = 0;
   elements.captureCanvas.width = 0;
@@ -334,6 +367,7 @@ function fail(message) {
   elements.dashboard.hidden = true;
   elements.cameraStage.hidden = true;
   elements.review.hidden = true;
+  elements.taxIdStage.hidden = true;
   elements.complete.hidden = true;
   elements.fatal.hidden = false;
   elements.fatalMessage.textContent = message;
@@ -688,6 +722,166 @@ async function canvasToJpeg(canvas) {
   return { blob, bytes: new Uint8Array(await blob.arrayBuffer()) };
 }
 
+function clearTaxIdEntry() {
+  elements.taxIdInput.value = '';
+  elements.taxIdInput.removeAttribute('aria-invalid');
+  elements.taxIdError.textContent = '';
+  elements.taxIdPhotoInput.value = '';
+}
+
+function showCaptureReview(result, consentCopy) {
+  acceptedCapture = result;
+  stopCamera();
+  previewUrl = URL.createObjectURL(result.blob);
+  elements.preview.src = previewUrl;
+  elements.reviewTitle.textContent = sideTitle();
+  elements.consentLabel.textContent = consentCopy;
+  elements.consent.checked = false;
+  elements.useCapture.disabled = true;
+  elements.useCapture.textContent =
+    side === 'tax-id' ? 'Steuer-ID übernehmen' : 'Aufnahme verwenden';
+  elements.repeatCapture.textContent =
+    side === 'tax-id' ? 'Ändern' : 'Neu aufnehmen';
+  elements.repeatCapture.disabled = false;
+  elements.reviewStatus.textContent = '';
+  elements.uploadProgress.hidden = true;
+  elements.taxIdStage.hidden = true;
+  elements.review.hidden = false;
+  state = 'review';
+  elements.app.setAttribute('aria-busy', 'false');
+  elements.reviewTitle.focus({ preventScroll: true });
+}
+
+function taxIdDisplayValue(value) {
+  return `${value.slice(0, 2)} ${value.slice(2, 5)} ${value.slice(
+    5,
+    8,
+  )} ${value.slice(8)}`;
+}
+
+async function renderTypedTaxId(value) {
+  const canvas = document.createElement('canvas');
+  canvas.width = TAX_ID_PAGE_WIDTH;
+  canvas.height = TAX_ID_PAGE_HEIGHT;
+  try {
+    const context = canvas.getContext('2d', { alpha: false });
+    context.fillStyle = '#d8e0e2';
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.fillStyle = '#07545a';
+    context.fillRect(0, 0, canvas.width, 190);
+    context.fillStyle = '#ffffff';
+    context.font = '700 58px system-ui, sans-serif';
+    context.fillText('SICHERHEIT NORD', 90, 120);
+    context.fillStyle = '#12223d';
+    context.font = '700 54px system-ui, sans-serif';
+    context.fillText('Steuerliche Identifikationsnummer', 90, 410);
+    context.fillStyle = '#ffffff';
+    context.strokeStyle = '#6f858d';
+    context.lineWidth = 5;
+    context.fillRect(80, 570, 1_240, 300);
+    context.strokeRect(80, 570, 1_240, 300);
+    context.fillStyle = '#12223d';
+    context.font = '700 74px ui-monospace, SFMono-Regular, Consolas, monospace';
+    context.textAlign = 'center';
+    context.fillText(taxIdDisplayValue(value), 700, 750);
+    context.textAlign = 'left';
+    context.font = '500 38px system-ui, sans-serif';
+    context.fillText('Vom Bewerber eingegeben und bestätigt.', 90, 1_080);
+    context.fillText(
+      'Die amtliche Zuordnung erfolgt im ELStAM-Verfahren.',
+      90,
+      1_150,
+    );
+    const encoded = await canvasToJpeg(canvas);
+    return {
+      quality: { accepted: true, status: 'accepted' },
+      blob: encoded.blob,
+      bytes: encoded.bytes,
+      width: canvas.width,
+      height: canvas.height,
+    };
+  } finally {
+    canvas.width = 0;
+    canvas.height = 0;
+  }
+}
+
+async function imageSourceFromFile(file) {
+  if (typeof createImageBitmap === 'function') {
+    try {
+      const bitmap = await createImageBitmap(file, {
+        imageOrientation: 'from-image',
+      });
+      return {
+        source: bitmap,
+        width: bitmap.width,
+        height: bitmap.height,
+        close: () => bitmap.close(),
+      };
+    } catch {
+      // Safari versions without this option use the image element fallback.
+    }
+  }
+  const url = URL.createObjectURL(file);
+  try {
+    const image = new Image();
+    image.src = url;
+    await image.decode();
+    return {
+      source: image,
+      width: image.naturalWidth,
+      height: image.naturalHeight,
+      close: () => URL.revokeObjectURL(url),
+    };
+  } catch (error) {
+    URL.revokeObjectURL(url);
+    throw error;
+  }
+}
+
+async function normalizeTaxIdPhoto(file) {
+  if (!(file instanceof File) || !file.type.startsWith('image/')) {
+    throw new Error('Bitte ein Foto auswählen.');
+  }
+  const decoded = await imageSourceFromFile(file);
+  const canvas = document.createElement('canvas');
+  canvas.width = TAX_ID_PAGE_WIDTH;
+  canvas.height = TAX_ID_PAGE_HEIGHT;
+  try {
+    const context = canvas.getContext('2d', { alpha: false });
+    context.fillStyle = '#d8e0e2';
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    const padding = 36;
+    const scale = Math.min(
+      (canvas.width - padding * 2) / decoded.width,
+      (canvas.height - padding * 2) / decoded.height,
+    );
+    const width = Math.max(1, Math.round(decoded.width * scale));
+    const height = Math.max(1, Math.round(decoded.height * scale));
+    context.imageSmoothingEnabled = true;
+    context.imageSmoothingQuality = 'high';
+    context.drawImage(
+      decoded.source,
+      Math.round((canvas.width - width) / 2),
+      Math.round((canvas.height - height) / 2),
+      width,
+      height,
+    );
+    const encoded = await canvasToJpeg(canvas);
+    return {
+      quality: { accepted: true, status: 'accepted' },
+      blob: encoded.blob,
+      bytes: encoded.bytes,
+      width: canvas.width,
+      height: canvas.height,
+    };
+  } finally {
+    decoded.close();
+    canvas.width = 0;
+    canvas.height = 0;
+  }
+}
+
 async function produceCapture() {
   // Freeze the exact live frame at the 3–2–1 boundary. Using that same camera
   // geometry keeps the review crop identical to the guide the applicant saw.
@@ -828,11 +1022,13 @@ const STATUS_COPY = Object.freeze({
 });
 
 function renderDashboard() {
-  const hasCompletedDocument = SCANNER_DOCUMENTS.some(
+  const documents = availableDocuments();
+  elements.taxIdCard.hidden = documentSetVersion < 3;
+  const hasCompletedDocument = documents.some(
     (documentDefinition) =>
       documentScanStatus(documentDefinition, completedSlots) === 'complete',
   );
-  for (const documentDefinition of SCANNER_DOCUMENTS) {
+  for (const documentDefinition of documents) {
     const selected = selectedDocumentIds.has(documentDefinition.id);
     const scanStatus = documentScanStatus(documentDefinition, completedSlots);
     const status =
@@ -875,9 +1071,11 @@ function renderDashboard() {
 
 function showDashboard() {
   stopCamera();
+  clearTaxIdEntry();
   elements.loading.hidden = true;
   elements.cameraStage.hidden = true;
   elements.review.hidden = true;
+  elements.taxIdStage.hidden = true;
   elements.dashboard.hidden = false;
   elements.backToDashboard.hidden = true;
   if (!sessionClosed) elements.dashboardStatus.textContent = '';
@@ -885,6 +1083,99 @@ function showDashboard() {
   elements.app.setAttribute('aria-busy', 'false');
   renderDashboard();
   elements.dashboardTitle.focus({ preventScroll: true });
+}
+
+function showTaxIdStage() {
+  stopCamera();
+  clearTaxIdEntry();
+  elements.dashboard.hidden = true;
+  elements.cameraStage.hidden = true;
+  elements.review.hidden = true;
+  elements.taxIdStage.hidden = false;
+  elements.taxIdMethods.hidden = false;
+  elements.taxIdForm.hidden = true;
+  state = 'tax-id-method';
+  elements.app.setAttribute('aria-busy', 'false');
+  elements.taxIdTitle.focus({ preventScroll: true });
+}
+
+function backFromTaxIdStage() {
+  if (busy || pendingConfirm || sessionClosed) return;
+  selectedDocumentIds.clear();
+  selectionLocked = false;
+  showDashboard();
+}
+
+function showTaxIdInput() {
+  if (busy || pendingConfirm || sessionClosed) return;
+  elements.taxIdMethods.hidden = true;
+  elements.taxIdForm.hidden = false;
+  elements.taxIdInput.focus({ preventScroll: true });
+}
+
+async function submitTypedTaxId(event) {
+  event.preventDefault();
+  if (busy || pendingConfirm || sessionClosed) return;
+  const normalized = normalizeTaxId(elements.taxIdInput.value);
+  if (!normalized || !isPlausibleTaxId(normalized)) {
+    elements.taxIdInput.setAttribute('aria-invalid', 'true');
+    elements.taxIdError.textContent =
+      'Diese Steuer-ID ist nicht gültig. Bitte prüfen Sie die 11 Ziffern.';
+    elements.taxIdInput.focus({ preventScroll: true });
+    return;
+  }
+  busy = true;
+  elements.taxIdSubmit.disabled = true;
+  elements.taxIdError.textContent = '';
+  elements.app.setAttribute('aria-busy', 'true');
+  try {
+    side = 'tax-id';
+    applyProfileVisuals();
+    const result = await renderTypedTaxId(normalized);
+    clearTaxIdEntry();
+    showCaptureReview(result, 'Steuer-ID auf Richtigkeit geprüft.');
+  } catch (error) {
+    elements.taxIdError.textContent =
+      error instanceof Error
+        ? error.message
+        : 'Die Steuer-ID konnte nicht vorbereitet werden.';
+  } finally {
+    busy = false;
+    elements.taxIdSubmit.disabled = false;
+    elements.app.setAttribute('aria-busy', 'false');
+    updateReviewControls();
+  }
+}
+
+async function useTaxIdPhoto() {
+  if (busy || pendingConfirm || sessionClosed) return;
+  const file = elements.taxIdPhotoInput.files?.[0];
+  if (!file) return;
+  busy = true;
+  elements.taxIdPhoto.disabled = true;
+  elements.taxIdError.textContent = '';
+  elements.app.setAttribute('aria-busy', 'true');
+  try {
+    side = 'tax-id';
+    applyProfileVisuals();
+    const result = await normalizeTaxIdPhoto(file);
+    clearTaxIdEntry();
+    showCaptureReview(
+      result,
+      'Steuer-ID und Name lesbar – Dokumentausschnitt bestätigen.',
+    );
+  } catch (error) {
+    elements.taxIdError.textContent =
+      error instanceof Error
+        ? error.message
+        : 'Das Foto konnte nicht verarbeitet werden.';
+  } finally {
+    elements.taxIdPhotoInput.value = '';
+    busy = false;
+    elements.taxIdPhoto.disabled = false;
+    elements.app.setAttribute('aria-busy', 'false');
+    updateReviewControls();
+  }
 }
 
 function openDocument(documentId) {
@@ -899,12 +1190,18 @@ function openDocument(documentId) {
   ) {
     return;
   }
-  const documentDefinition = SCANNER_DOCUMENTS.find(
+  const documentDefinition = availableDocuments().find(
     (candidate) => candidate.id === documentId,
   );
   if (!documentDefinition) return;
   const nextSlot = nextDocumentSlot(documentDefinition, completedSlots);
   if (!nextSlot) return;
+  if (nextSlot === 'tax-id') {
+    side = nextSlot;
+    applyProfileVisuals();
+    showTaxIdStage();
+    return;
+  }
   side = nextSlot;
   applyProfileVisuals();
   elements.dashboard.hidden = true;
@@ -929,7 +1226,7 @@ function startDocument(documentId) {
   ) {
     return;
   }
-  const documentDefinition = SCANNER_DOCUMENTS.find(
+  const documentDefinition = availableDocuments().find(
     (candidate) => candidate.id === documentId,
   );
   if (
@@ -954,7 +1251,7 @@ function backToDashboard() {
   ) {
     return;
   }
-  const activeDocument = SCANNER_DOCUMENTS.find((documentDefinition) =>
+  const activeDocument = availableDocuments().find((documentDefinition) =>
     selectedDocumentIds.has(documentDefinition.id),
   );
   if (
@@ -972,7 +1269,7 @@ function resumeSelectedDocumentAfterClaim() {
     showDashboard();
     return;
   }
-  const activeDocument = SCANNER_DOCUMENTS.find((documentDefinition) =>
+  const activeDocument = availableDocuments().find((documentDefinition) =>
     selectedDocumentIds.has(documentDefinition.id),
   );
   if (!activeDocument) {
@@ -989,7 +1286,8 @@ function resumeSelectedDocumentAfterClaim() {
   }
   side = nextSlot;
   applyProfileVisuals();
-  resumeOrRequestCamera();
+  if (nextSlot === 'tax-id') showTaxIdStage();
+  else resumeOrRequestCamera();
 }
 
 function resumeOrRequestCamera() {
@@ -1030,23 +1328,9 @@ async function captureAutomatically() {
       resumeOrRequestCamera();
       return;
     }
-    acceptedCapture = result;
     // The accepted preview is a still image. Never leave the camera active
     // invisibly behind the review or upload screen.
-    stopCamera();
-    previewUrl = URL.createObjectURL(result.blob);
-    elements.preview.src = previewUrl;
-    elements.reviewTitle.textContent = sideTitle();
-    elements.consent.checked = false;
-    elements.useCapture.disabled = true;
-    elements.useCapture.textContent = 'Aufnahme verwenden';
-    elements.repeatCapture.disabled = false;
-    elements.reviewStatus.textContent = '';
-    elements.uploadProgress.hidden = true;
-    elements.review.hidden = false;
-    state = 'review';
-    elements.app.setAttribute('aria-busy', 'false');
-    elements.reviewTitle.focus({ preventScroll: true });
+    showCaptureReview(result, 'Angaben lesbar – Dokumentenkopie bestätigen.');
   } catch (error) {
     if (sessionClosed) return;
     setGuide(false);
@@ -1351,6 +1635,10 @@ function repeatCapture() {
   if (busy || retryPayload || pendingConfirm || sessionClosed) return;
   clearAcceptedCapture();
   elements.review.hidden = true;
+  if (side === 'tax-id') {
+    showTaxIdStage();
+    return;
+  }
   elements.cameraStage.hidden = false;
   elements.app.setAttribute('aria-busy', 'false');
   if (mediaStream) beginAnalysis();
@@ -1371,6 +1659,7 @@ function completeSession(returnToDashboard = false) {
   elements.loading.hidden = true;
   elements.cameraStage.hidden = true;
   elements.review.hidden = true;
+  elements.taxIdStage.hidden = true;
   elements.fatal.hidden = true;
   elements.app.setAttribute('aria-busy', 'false');
   if (returnToDashboard) {
@@ -1461,6 +1750,9 @@ async function start() {
     endpoint = bootstrap.endpoint;
     protocolVersion = bootstrap.version;
     captureMode = protocolVersion === '2' ? 'documents-v2' : 'identity-v1';
+    documentSetVersion =
+      protocolVersion === '2' && bootstrap.documentSetVersion === 3 ? 3 : 2;
+    if (protocolVersion === '2') renderDashboard();
     side = 'front';
     phoneSession = createPhoneSession();
     let cameraAttempt = Promise.resolve(false);
@@ -1491,12 +1783,14 @@ async function start() {
     }
     if (protocolVersion === '2') {
       const allowedSlots = new Set(
-        SCANNER_DOCUMENTS.flatMap((documentDefinition) =>
+        availableDocuments().flatMap((documentDefinition) =>
           Array.from(documentDefinition.slots),
         ),
       );
+      const claimedDocumentSetVersion = claimed.documentSetVersion ?? 2;
       if (
         claimed.captureMode !== 'documents-v2' ||
+        claimedDocumentSetVersion !== documentSetVersion ||
         !Array.isArray(claimed.slotsReceived) ||
         claimed.slotsReceived.some(
           (slot) => typeof slot !== 'string' || !allowedSlots.has(slot),
@@ -1536,6 +1830,22 @@ elements.documentList.addEventListener('click', (event) => {
   if (!(card instanceof HTMLButtonElement)) return;
   if (selectionLocked) openDocument(card.dataset.document);
   else startDocument(card.dataset.document);
+});
+elements.taxIdBack.addEventListener('click', backFromTaxIdStage);
+elements.taxIdType.addEventListener('click', showTaxIdInput);
+elements.taxIdPhoto.addEventListener('click', () => {
+  if (!busy && !pendingConfirm && !sessionClosed) {
+    elements.taxIdPhotoInput.click();
+  }
+});
+elements.taxIdPhotoInput.addEventListener('change', () => void useTaxIdPhoto());
+elements.taxIdForm.addEventListener(
+  'submit',
+  (event) => void submitTypedTaxId(event),
+);
+elements.taxIdInput.addEventListener('input', () => {
+  elements.taxIdInput.removeAttribute('aria-invalid');
+  elements.taxIdError.textContent = '';
 });
 elements.backToDashboard.addEventListener('click', backToDashboard);
 elements.finishSession.addEventListener(
