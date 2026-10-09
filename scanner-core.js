@@ -46,7 +46,7 @@ export const SCANNER_DOCUMENTS = Object.freeze([
   }),
   Object.freeze({
     id: 'tax-id',
-    title: 'Steuer-ID',
+    title: 'Steueridentifikationsnummer',
     description: 'Eingeben oder fotografieren',
     slots: Object.freeze(['tax-id']),
     documentSetVersion: 3,

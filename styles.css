@@ -198,21 +198,20 @@ button {
   min-width: 0;
 }
 
-.document-copy strong,
-.document-copy small {
+.document-copy strong {
   display: block;
 }
 
 .document-copy strong {
   font-size: clamp(0.92rem, 4.1vw, 1.02rem);
   line-height: 1.25;
+  hyphens: auto;
+  overflow-wrap: anywhere;
 }
 
-.document-copy small {
-  margin-top: 3px;
-  color: #617183;
-  font-size: 0.8rem;
-  line-height: 1.25;
+.tax-id-stage .dashboard-heading h1 {
+  hyphens: auto;
+  overflow-wrap: anywhere;
 }
 
 .document-status {
@@ -585,7 +584,7 @@ button {
   position: absolute;
   z-index: 6;
   left: 50%;
-  top: 62%;
+  top: max(76px, calc(env(safe-area-inset-top) + 64px));
   transform: translateX(-50%);
   width: min(86vw, 360px);
 }

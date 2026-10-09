@@ -252,7 +252,7 @@ test('document dashboard status requires complete documents and rejects half-fin
   assert.equal(documentScanStatus(passport, ['passport-data']), 'complete');
 });
 
-test('legacy document sets hide Steuer-ID while version 3 exposes one logical slot', () => {
+test('legacy document sets hide the tax number while version 3 exposes one logical slot', () => {
   assert.deepEqual(
     scannerDocumentsForVersion(2).map(({ id }) => id),
     ['identity-card', 'passport', 'health-card'],
@@ -264,9 +264,13 @@ test('legacy document sets hide Steuer-ID while version 3 exposes one logical sl
   assert.deepEqual(SCANNER_DOCUMENTS.find(({ id }) => id === 'tax-id').slots, [
     'tax-id',
   ]);
+  assert.equal(
+    SCANNER_DOCUMENTS.find(({ id }) => id === 'tax-id').title,
+    'Steueridentifikationsnummer',
+  );
 });
 
-test('normalizes and checks German Steuer-ID input without exposing a correction', () => {
+test('normalizes and checks German tax identification input without exposing a correction', () => {
   assert.equal(normalizeTaxId('86 095 742 719'), '86095742719');
   assert.equal(normalizeTaxId('86\u00a0095-742\u202f719'), '86095742719');
   assert.equal(normalizeTaxId('86/095/742/719'), null);

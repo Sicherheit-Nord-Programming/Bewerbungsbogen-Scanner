@@ -13,15 +13,15 @@ test('standalone page contains a live camera guide without external code', async
   assert.match(html, /<video[^>]+autoplay[^>]+muted[^>]+playsinline/);
   assert.match(html, /id="id-guide"/);
   assert.match(html, /id="countdown"/);
-  assert.match(html, /scanner\.js\?v=20261009-tax-id-v10/);
-  assert.match(html, /styles\.css\?v=20261009-tax-id-v10/);
+  assert.match(html, /scanner\.js\?v=20261009-clean-directory-v11/);
+  assert.match(html, /styles\.css\?v=20261009-clean-directory-v11/);
   assert.match(html, /<title>Sicherheit Nord · Ausweisscan<\/title>/);
   assert.match(
     html,
     /rel="canonical" href="https:\/\/sicherheit-nord-ausweisscan\.web\.app\/"/,
   );
   assert.match(html, /<meta name="referrer" content="no-referrer" \/>/);
-  assert.match(html, /legacy-redirect\.js\?v=20261009-tax-id-v10/);
+  assert.match(html, /legacy-redirect\.js\?v=20261009-clean-directory-v11/);
   assert.match(html, /class="guide-orientation">OBERKANTE</);
   assert.match(html, /Vorderseite Personalausweis/);
   assert.match(html, /sicherheit-nord-logo\.png/);
@@ -56,10 +56,21 @@ test('standalone page contains a live camera guide without external code', async
     assert.ok(cardTag);
     assert.doesNotMatch(cardTag, /aria-pressed=/);
   }
-  assert.equal((html.match(/>Scannen<\/span>/g) ?? []).length, 4);
-  assert.doesNotMatch(html, /Auswahl scannen|>Offen<\/span>/);
-  assert.equal((html.match(/<small>2 Seiten<\/small>/g) ?? []).length, 2);
-  assert.equal((html.match(/<small>1 Seite<\/small>/g) ?? []).length, 1);
+  assert.equal((html.match(/>Auswählbar<\/span/g) ?? []).length, 4);
+  assert.doesNotMatch(
+    html,
+    /Auswahl scannen|>Scannen<\/span>|<small>|2 Seiten|1 Seite|Eingeben oder fotografieren/,
+  );
+  assert.match(html, /<strong>Steueridentifikationsnummer<\/strong>/);
+  const taxIdStage = html.match(
+    /<section\s+id="tax-id-stage"[\s\S]+?<\/section>/,
+  )?.[0];
+  assert.ok(taxIdStage);
+  assert.doesNotMatch(taxIdStage, /sicherheit-nord-logo|brand-logo/);
+  assert.match(
+    taxIdStage,
+    /<h1 id="tax-id-title"[^>]*>[\s\S]*?Steueridentifikationsnummer[\s\S]*?<\/h1>/,
+  );
   assert.doesNotMatch(html, /Dokumentenübersicht|Wählen Sie ein Dokument aus/);
   assert.doesNotMatch(html, /Bitte das bereits begonnene Dokument/);
   assert.doesNotMatch(html, /Zum Laptop zurückkehren|Laptop zurückgeben/);
@@ -108,8 +119,12 @@ test('standalone page contains a live camera guide without external code', async
   );
   assert.match(script, /prepareEncryptedCapture/);
   assert.match(script, /protocolVersion,/);
-  assert.match(script, /scanner-core\.js\?v=20261009-tax-id-v10/);
-  assert.match(script, /relay-client\.js\?v=20261009-tax-id-v10/);
+  assert.match(script, /scanner-core\.js\?v=20261009-clean-directory-v11/);
+  assert.match(script, /relay-client\.js\?v=20261009-clean-directory-v11/);
+  assert.match(
+    script,
+    /open: 'Auswählbar',[\s\S]+?selected: 'Offen',[\s\S]+?'in-progress': 'Offen',[\s\S]+?complete: 'Abgeschlossen'/,
+  );
   assert.match(script, /function submitTypedTaxId\(event\)/);
   assert.match(script, /isPlausibleTaxId\(normalized\)/);
   assert.match(script, /function normalizeTaxIdPhoto\(file\)/);
@@ -198,6 +213,14 @@ test('standalone page contains a live camera guide without external code', async
   assert.match(script, /Rückseite Personalausweis/);
   assert.match(script, /acceptedCapture = result;[\s\S]{0,250}stopCamera\(\)/);
   assert.match(script, /visibilitychange/);
+  assert.match(
+    script,
+    /visibilitychange[\s\S]+?document\.visibilityState === 'hidden'[\s\S]+?stopCamera\(\)[\s\S]+?setCameraMessage\('Kamera wird geöffnet …',[\s\S]+?void requestCamera\(\)/,
+  );
+  assert.doesNotMatch(
+    script,
+    /visibilitychange[\s\S]+?Bitte Kamera erneut öffnen[\s\S]+?startCamera\.hidden = false/,
+  );
   assert.match(script, /pagehide/);
   assert.match(
     styles,
@@ -220,6 +243,14 @@ test('standalone page contains a live camera guide without external code', async
   assert.match(styles, /grid-auto-rows:\s*1fr/);
   assert.match(styles, /\.document-card:not\(:disabled\):hover/);
   assert.match(styles, /\.torch-toggle\.is-on/);
+  assert.match(
+    styles,
+    /\.document-copy strong\s*\{[\s\S]+?hyphens:\s*auto[\s\S]+?overflow-wrap:\s*anywhere/,
+  );
+  const startCameraRule = styles.match(/\.start-camera\s*\{([\s\S]*?)\}/)?.[1];
+  assert.ok(startCameraRule);
+  assert.match(startCameraRule, /top:\s*max\(76px,/);
+  assert.doesNotMatch(startCameraRule, /top:\s*62%/);
   const guideRule = styles.match(/\.id-guide\s*\{([\s\S]*?)\}/)?.[1];
   assert.ok(guideRule);
   assert.match(guideRule, /width:\s*min\(75vw,\s*44dvh,\s*300px\)/);
@@ -294,11 +325,11 @@ test('a dashboard return detaches an in-flight camera request from the next docu
   const source = await readFile(scannerUrl, 'utf8');
   const instrumentedSource = source
     .replace(
-      "from './scanner-core.js?v=20261009-tax-id-v10';",
+      "from './scanner-core.js?v=20261009-clean-directory-v11';",
       `from ${JSON.stringify(scannerCoreUrl)};`,
     )
     .replace(
-      "from './relay-client.js?v=20261009-tax-id-v10';",
+      "from './relay-client.js?v=20261009-clean-directory-v11';",
       `from ${JSON.stringify(relayClientUrl)};`,
     )
     .replace(
@@ -315,6 +346,9 @@ export function prepareDashboardLifecycleTest() {
   protocolVersion = '2';
   captureMode = 'documents-v2';
   sessionClaimed = true;
+  sessionClosed = false;
+  pendingConfirm = false;
+  busy = false;
   selectionLocked = false;
   selectedDocumentIds.clear();
   state = 'dashboard';
@@ -470,10 +504,26 @@ export function cameraLifecycleState() {
   const firstCamera = deferred();
   const secondCamera = deferred();
   const thirdCamera = deferred();
-  const pendingCameras = [firstCamera, secondCamera, thirdCamera];
+  const hiddenCamera = deferred();
+  const resumedCamera = deferred();
+  const pendingCameras = [
+    firstCamera,
+    secondCamera,
+    thirdCamera,
+    hiddenCamera,
+    resumedCamera,
+  ];
   let getUserMediaCalls = 0;
   let animationFrameCalls = 0;
   let scanner;
+  const documentListeners = new Map();
+  const mockDocument = {
+    addEventListener(type, listener) {
+      documentListeners.set(type, listener);
+    },
+    getElementById: element,
+    visibilityState: 'visible',
+  };
 
   try {
     defineGlobal('cancelAnimationFrame', () => {});
@@ -484,11 +534,7 @@ export function cameraLifecycleState() {
     defineGlobal('innerHeight', 844);
     defineGlobal('innerWidth', 390);
     defineGlobal('HTMLButtonElement', class {});
-    defineGlobal('document', {
-      addEventListener() {},
-      getElementById: element,
-      visibilityState: 'visible',
-    });
+    defineGlobal('document', mockDocument);
     defineGlobal('window', {
       addEventListener() {},
       clearTimeout,
@@ -605,6 +651,46 @@ export function cameraLifecycleState() {
       finishHidden: false,
       finishDisabled: false,
     });
+
+    scanner.prepareDashboardLifecycleTest();
+    scanner.startDocument('passport');
+    const interruptedResult = scanner.cameraLifecycleState().cameraPromise;
+    assert.ok(interruptedResult);
+    assert.equal(getUserMediaCalls, 4);
+
+    mockDocument.visibilityState = 'hidden';
+    documentListeners.get('visibilitychange')();
+    assert.equal(scanner.cameraLifecycleState().hasCameraRequest, false);
+
+    const interruptedStream = createStream();
+    hiddenCamera.resolve(interruptedStream);
+    assert.equal(await interruptedResult, false);
+    assert.equal(interruptedStream.track.stopCalls, 1);
+
+    mockDocument.visibilityState = 'visible';
+    documentListeners.get('visibilitychange')();
+    const resumedResult = scanner.cameraLifecycleState().cameraPromise;
+    assert.ok(resumedResult);
+    assert.equal(
+      getUserMediaCalls,
+      5,
+      'returning to the active scan must reopen the camera automatically',
+    );
+
+    documentListeners.get('visibilitychange')();
+    assert.equal(
+      getUserMediaCalls,
+      5,
+      'repeated visible events must reuse the in-flight camera request',
+    );
+
+    const resumedStream = createStream();
+    resumedCamera.resolve(resumedStream);
+    assert.equal(await resumedResult, true);
+    assert.equal(scanner.cameraLifecycleState().mediaStream, resumedStream);
+    assert.equal(element('start-camera').hidden, true);
+    scanner.stopCamera();
+    assert.equal(resumedStream.track.stopCalls, 1);
   } finally {
     for (const [name, descriptor] of originalGlobals) {
       if (descriptor) Object.defineProperty(globalThis, name, descriptor);

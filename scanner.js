@@ -20,7 +20,7 @@ import {
   portraitCaptureLayout,
   scannerDocumentsForVersion,
   updateHoldState,
-} from './scanner-core.js?v=20261009-tax-id-v10';
+} from './scanner-core.js?v=20261009-clean-directory-v11';
 import {
   callRelayWithOneRetry,
   createPhoneSession,
@@ -32,7 +32,7 @@ import {
   RelayError,
   uploadChunksConcurrently,
   waitForStaticSession,
-} from './relay-client.js?v=20261009-tax-id-v10';
+} from './relay-client.js?v=20261009-clean-directory-v11';
 
 const MAX_FINALIZE_ATTEMPTS = 5;
 const LIVE_ANALYSIS_INTERVAL_MS = 145;
@@ -168,9 +168,10 @@ const SLOT_PROFILES = Object.freeze({
     instruction: 'Krankenkassenkarte hochkant in den Rahmen halten.',
   },
   'tax-id': {
-    title: 'Steuerliche Identifikationsnummer',
+    title: 'Steueridentifikationsnummer',
     aspectRatio: TAX_ID_PAGE_WIDTH / TAX_ID_PAGE_HEIGHT,
-    instruction: 'Nur den Bereich mit der Steuer-ID fotografieren.',
+    instruction:
+      'Nur den Bereich mit der Steueridentifikationsnummer fotografieren.',
   },
 });
 
@@ -739,7 +740,7 @@ function showCaptureReview(result, consentCopy) {
   elements.consent.checked = false;
   elements.useCapture.disabled = true;
   elements.useCapture.textContent =
-    side === 'tax-id' ? 'Steuer-ID übernehmen' : 'Aufnahme verwenden';
+    side === 'tax-id' ? 'Nummer übernehmen' : 'Aufnahme verwenden';
   elements.repeatCapture.textContent =
     side === 'tax-id' ? 'Ändern' : 'Neu aufnehmen';
   elements.repeatCapture.disabled = false;
@@ -774,7 +775,7 @@ async function renderTypedTaxId(value) {
     context.fillText('SICHERHEIT NORD', 90, 120);
     context.fillStyle = '#12223d';
     context.font = '700 54px system-ui, sans-serif';
-    context.fillText('Steuerliche Identifikationsnummer', 90, 410);
+    context.fillText('Steueridentifikationsnummer', 90, 410);
     context.fillStyle = '#ffffff';
     context.strokeStyle = '#6f858d';
     context.lineWidth = 5;
@@ -1013,11 +1014,11 @@ async function produceCapture() {
 }
 
 const STATUS_COPY = Object.freeze({
-  open: 'Scannen',
-  selected: 'Ausgewählt',
-  'not-selected': 'Nicht gewählt',
-  'not-scanned': 'Nicht gescannt',
-  'in-progress': 'In Bearbeitung',
+  open: 'Auswählbar',
+  selected: 'Offen',
+  'not-selected': 'Auswählbar',
+  'not-scanned': 'Offen',
+  'in-progress': 'Offen',
   complete: 'Abgeschlossen',
 });
 
@@ -1057,7 +1058,7 @@ function renderDashboard() {
       card.removeAttribute('aria-pressed');
       card.setAttribute(
         'aria-label',
-        `${documentDefinition.title}, ${documentDefinition.description}: ${STATUS_COPY[status]}`,
+        `${documentDefinition.title}: ${STATUS_COPY[status]}`,
       );
     }
   }
@@ -1120,7 +1121,7 @@ async function submitTypedTaxId(event) {
   if (!normalized || !isPlausibleTaxId(normalized)) {
     elements.taxIdInput.setAttribute('aria-invalid', 'true');
     elements.taxIdError.textContent =
-      'Diese Steuer-ID ist nicht gültig. Bitte prüfen Sie die 11 Ziffern.';
+      'Diese Steueridentifikationsnummer ist nicht gültig. Bitte prüfen Sie die 11 Ziffern.';
     elements.taxIdInput.focus({ preventScroll: true });
     return;
   }
@@ -1133,12 +1134,15 @@ async function submitTypedTaxId(event) {
     applyProfileVisuals();
     const result = await renderTypedTaxId(normalized);
     clearTaxIdEntry();
-    showCaptureReview(result, 'Steuer-ID auf Richtigkeit geprüft.');
+    showCaptureReview(
+      result,
+      'Steueridentifikationsnummer auf Richtigkeit geprüft.',
+    );
   } catch (error) {
     elements.taxIdError.textContent =
       error instanceof Error
         ? error.message
-        : 'Die Steuer-ID konnte nicht vorbereitet werden.';
+        : 'Die Steueridentifikationsnummer konnte nicht vorbereitet werden.';
   } finally {
     busy = false;
     elements.taxIdSubmit.disabled = false;
@@ -1162,7 +1166,7 @@ async function useTaxIdPhoto() {
     clearTaxIdEntry();
     showCaptureReview(
       result,
-      'Steuer-ID und Name lesbar – Dokumentausschnitt bestätigen.',
+      'Steueridentifikationsnummer und Name lesbar – Dokumentausschnitt bestätigen.',
     );
   } catch (error) {
     elements.taxIdError.textContent =
@@ -1299,7 +1303,7 @@ function resumeOrRequestCamera() {
   state = 'scanning';
   setGuide(false);
   setCameraMessage('Kamera wird geöffnet …', 'Bitte einen Moment warten.');
-  void requestCamera();
+  if (document.visibilityState === 'visible') void requestCamera();
 }
 
 async function captureAutomatically() {
@@ -1862,19 +1866,19 @@ elements.repeatCapture.addEventListener('click', repeatCapture);
 window.addEventListener('pagehide', disposeSensitiveState, { once: true });
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden') {
-    if (mediaStream) stopCamera();
+    if (mediaStream || cameraRequest) stopCamera();
     return;
   }
   if (
     !sessionClosed &&
     sessionClaimed &&
-    (state === 'scanning' || state === 'capturing') &&
+    state === 'scanning' &&
     !mediaStream
   ) {
     state = 'scanning';
     setGuide(false);
-    setCameraMessage('Kamera wird benötigt.', 'Bitte Kamera erneut öffnen.');
-    elements.startCamera.hidden = false;
+    setCameraMessage('Kamera wird geöffnet …', 'Bitte einen Moment warten.');
+    void requestCamera();
   }
 });
 

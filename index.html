@@ -23,9 +23,12 @@
       content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:; media-src blob:; connect-src https://script.google.com https://*.googleusercontent.com; base-uri 'none'; form-action 'none'"
     />
     <title>Sicherheit Nord · Ausweisscan</title>
-    <script src="./legacy-redirect.js?v=20261009-tax-id-v10"></script>
-    <link rel="stylesheet" href="./styles.css?v=20261009-tax-id-v10" />
-    <script type="module" src="./scanner.js?v=20261009-tax-id-v10"></script>
+    <script src="./legacy-redirect.js?v=20261009-clean-directory-v11"></script>
+    <link rel="stylesheet" href="./styles.css?v=20261009-clean-directory-v11" />
+    <script
+      type="module"
+      src="./scanner.js?v=20261009-clean-directory-v11"
+    ></script>
   </head>
   <body>
     <main id="app" class="app" aria-busy="true">
@@ -62,9 +65,10 @@
             >
               <span class="document-copy">
                 <strong>Personalausweis</strong>
-                <small>2 Seiten</small>
               </span>
-              <span class="document-status is-open" data-status>Scannen</span>
+              <span class="document-status is-open" data-status
+                >Auswählbar</span
+              >
             </button>
             <button
               id="tax-id-card"
@@ -74,10 +78,11 @@
               hidden
             >
               <span class="document-copy">
-                <strong>Steuer-ID</strong>
-                <small>Eingeben oder fotografieren</small>
+                <strong>Steueridentifikationsnummer</strong>
               </span>
-              <span class="document-status is-open" data-status>Scannen</span>
+              <span class="document-status is-open" data-status
+                >Auswählbar</span
+              >
             </button>
             <button
               class="document-card"
@@ -86,9 +91,10 @@
             >
               <span class="document-copy">
                 <strong>Reisepass</strong>
-                <small>1 Seite</small>
               </span>
-              <span class="document-status is-open" data-status>Scannen</span>
+              <span class="document-status is-open" data-status
+                >Auswählbar</span
+              >
             </button>
             <button
               class="document-card"
@@ -97,9 +103,10 @@
             >
               <span class="document-copy">
                 <strong>Krankenkassenkarte</strong>
-                <small>2 Seiten</small>
               </span>
-              <span class="document-status is-open" data-status>Scannen</span>
+              <span class="document-status is-open" data-status
+                >Auswählbar</span
+              >
             </button>
           </div>
 
@@ -123,17 +130,11 @@
         aria-labelledby="tax-id-title"
       >
         <div class="dashboard-card tax-id-card">
-          <img
-            class="brand-logo"
-            src="./sicherheit-nord-logo.png"
-            alt="Sicherheit Nord"
-          />
           <button id="tax-id-back" class="tax-id-back" type="button">
             Übersicht
           </button>
           <div class="dashboard-heading">
-            <h1 id="tax-id-title" tabindex="-1">Steuer-ID</h1>
-            <p>11-stellige Steuer-ID – nicht die Steuernummer</p>
+            <h1 id="tax-id-title" tabindex="-1">Steueridentifikationsnummer</h1>
           </div>
 
           <div id="tax-id-methods" class="tax-id-methods">
@@ -146,7 +147,9 @@
           </div>
 
           <form id="tax-id-form" class="tax-id-form" hidden novalidate>
-            <label for="tax-id-input">11-stellige Steuer-ID</label>
+            <label for="tax-id-input"
+              >11-stellige Steueridentifikationsnummer</label
+            >
             <input
               id="tax-id-input"
               type="text"
