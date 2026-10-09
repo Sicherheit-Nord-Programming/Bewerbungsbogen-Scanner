@@ -20,7 +20,7 @@ import {
   portraitCaptureLayout,
   scannerDocumentsForVersion,
   updateHoldState,
-} from './scanner-core.js?v=20261009-clean-directory-v11';
+} from './scanner-core.js?v=20261009-smooth-controls-v12';
 import {
   callRelayWithOneRetry,
   createPhoneSession,
@@ -32,7 +32,7 @@ import {
   RelayError,
   uploadChunksConcurrently,
   waitForStaticSession,
-} from './relay-client.js?v=20261009-clean-directory-v11';
+} from './relay-client.js?v=20261009-smooth-controls-v12';
 
 const MAX_FINALIZE_ATTEMPTS = 5;
 const LIVE_ANALYSIS_INTERVAL_MS = 145;
@@ -116,6 +116,8 @@ let mediaStreamRequest = null;
 let activeVideoTrack = null;
 let torchSupported = false;
 let torchEnabled = false;
+let torchPending = false;
+let torchOperationId = 0;
 let cameraRequest = null;
 let cameraGeneration = 0;
 let analysisGeneration = 0;
@@ -130,6 +132,9 @@ let pendingConfirm = false;
 let busy = false;
 let expiryTimer = 0;
 let captureFeedbackTimer = 0;
+let documentOpenPending = false;
+let activeViewAnimation = null;
+let activeViewAnimationTarget = null;
 
 const SLOT_PROFILES = Object.freeze({
   front: {
@@ -221,6 +226,71 @@ function wait(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
+function prefersReducedMotion() {
+  return (
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  );
+}
+
+function animateViewIn(container, direction = 'forward', targetSelf = false) {
+  if (
+    !container ||
+    container.hidden ||
+    prefersReducedMotion() ||
+    typeof container.animate !== 'function'
+  ) {
+    return;
+  }
+
+  const isCamera = container === elements.cameraStage;
+  const isOverlay =
+    container === elements.review ||
+    container === elements.complete ||
+    container === elements.fatal;
+  const target =
+    targetSelf || isCamera
+      ? container
+      : container.firstElementChild || container;
+  if (typeof target.animate !== 'function') return;
+
+  if (activeViewAnimation && activeViewAnimationTarget) {
+    activeViewAnimation.cancel();
+  }
+
+  const offset = direction === 'backward' ? -14 : 14;
+  const frames = isCamera
+    ? [{ opacity: 0.72 }, { opacity: 1 }]
+    : isOverlay
+      ? [
+          { opacity: 0.58, transform: 'translateY(10px) scale(0.985)' },
+          { opacity: 1, transform: 'translateY(0) scale(1)' },
+        ]
+      : [
+          {
+            opacity: 0.62,
+            transform: `translate3d(${offset}px, 0, 0) scale(0.992)`,
+          },
+          { opacity: 1, transform: 'translate3d(0, 0, 0) scale(1)' },
+        ];
+  const animation = target.animate(frames, {
+    duration: isCamera ? 160 : 210,
+    easing: 'cubic-bezier(0.22, 1, 0.36, 1)',
+    fill: 'both',
+  });
+  activeViewAnimation = animation;
+  activeViewAnimationTarget = target;
+  void animation.finished
+    .catch(() => {})
+    .finally(() => {
+      if (activeViewAnimation === animation) {
+        activeViewAnimation = null;
+        activeViewAnimationTarget = null;
+      }
+      animation.cancel();
+    });
+}
+
 function triggerCaptureFeedback() {
   try {
     if (typeof navigator.vibrate === 'function') {
@@ -240,31 +310,59 @@ function updateTorchUi() {
   const visible = torchSupported && Boolean(activeVideoTrack);
   elements.torchToggle.hidden = !visible;
   elements.torchToggle.classList.toggle('is-on', visible && torchEnabled);
+  elements.torchToggle.classList.toggle('is-pending', visible && torchPending);
+  elements.torchToggle.disabled = visible && torchPending;
   elements.torchToggle.setAttribute(
     'aria-pressed',
     String(visible && torchEnabled),
   );
+  if (visible && torchPending) {
+    elements.torchToggle.setAttribute('aria-busy', 'true');
+  } else {
+    elements.torchToggle.removeAttribute('aria-busy');
+  }
   elements.torchToggle.textContent = torchEnabled ? 'Licht aus' : 'Licht an';
 }
 
 async function setTorch(enabled) {
-  if (!activeVideoTrack || !torchSupported) return false;
+  if (!activeVideoTrack || !torchSupported || torchPending) return false;
+  const track = activeVideoTrack;
+  const previous = torchEnabled;
+  const requested = Boolean(enabled);
+  const operationId = ++torchOperationId;
+  torchEnabled = requested;
+  torchPending = true;
+  updateTorchUi();
   try {
-    await activeVideoTrack.applyConstraints({
-      advanced: [{ torch: Boolean(enabled) }],
+    await track.applyConstraints({
+      advanced: [{ torch: requested }],
     });
-    torchEnabled = Boolean(enabled);
+    if (operationId !== torchOperationId || activeVideoTrack !== track) {
+      return false;
+    }
+    torchPending = false;
     updateTorchUi();
     return true;
-  } catch {
-    torchEnabled = false;
-    torchSupported = false;
+  } catch (error) {
+    if (operationId !== torchOperationId || activeVideoTrack !== track) {
+      return false;
+    }
+    torchEnabled = previous;
+    torchPending = false;
+    if (
+      error?.name === 'NotSupportedError' ||
+      error?.name === 'OverconstrainedError'
+    ) {
+      torchSupported = false;
+    }
     updateTorchUi();
     return false;
   }
 }
 
 function resetTorchState() {
+  torchOperationId += 1;
+  torchPending = false;
   if (activeVideoTrack && torchEnabled) {
     void activeVideoTrack
       .applyConstraints({ advanced: [{ torch: false }] })
@@ -341,6 +439,10 @@ function clearRetryPayload() {
 
 function disposeSensitiveState() {
   sessionClosed = true;
+  documentOpenPending = false;
+  if (activeViewAnimation) activeViewAnimation.cancel();
+  activeViewAnimation = null;
+  activeViewAnimationTarget = null;
   clearTimeout(expiryTimer);
   expiryTimer = 0;
   stopCamera();
@@ -373,6 +475,7 @@ function fail(message) {
   elements.fatal.hidden = false;
   elements.fatalMessage.textContent = message;
   elements.app.setAttribute('aria-busy', 'false');
+  animateViewIn(elements.fatal, 'forward');
   elements.fatal.focus({ preventScroll: true });
 }
 
@@ -750,6 +853,7 @@ function showCaptureReview(result, consentCopy) {
   elements.review.hidden = false;
   state = 'review';
   elements.app.setAttribute('aria-busy', 'false');
+  animateViewIn(elements.review, 'forward');
   elements.reviewTitle.focus({ preventScroll: true });
 }
 
@@ -1070,7 +1174,7 @@ function renderDashboard() {
     !canCompleteDocumentSession(completedSlots);
 }
 
-function showDashboard() {
+function showDashboard(direction = 'forward') {
   stopCamera();
   clearTaxIdEntry();
   elements.loading.hidden = true;
@@ -1083,10 +1187,11 @@ function showDashboard() {
   state = 'dashboard';
   elements.app.setAttribute('aria-busy', 'false');
   renderDashboard();
+  animateViewIn(elements.dashboard, direction);
   elements.dashboardTitle.focus({ preventScroll: true });
 }
 
-function showTaxIdStage() {
+function showTaxIdStage(direction = 'forward') {
   stopCamera();
   clearTaxIdEntry();
   elements.dashboard.hidden = true;
@@ -1097,6 +1202,7 @@ function showTaxIdStage() {
   elements.taxIdForm.hidden = true;
   state = 'tax-id-method';
   elements.app.setAttribute('aria-busy', 'false');
+  animateViewIn(elements.taxIdStage, direction);
   elements.taxIdTitle.focus({ preventScroll: true });
 }
 
@@ -1104,13 +1210,14 @@ function backFromTaxIdStage() {
   if (busy || pendingConfirm || sessionClosed) return;
   selectedDocumentIds.clear();
   selectionLocked = false;
-  showDashboard();
+  showDashboard('backward');
 }
 
 function showTaxIdInput() {
   if (busy || pendingConfirm || sessionClosed) return;
   elements.taxIdMethods.hidden = true;
   elements.taxIdForm.hidden = false;
+  animateViewIn(elements.taxIdForm, 'forward', true);
   elements.taxIdInput.focus({ preventScroll: true });
 }
 
@@ -1215,11 +1322,12 @@ function openDocument(documentId) {
   state = 'scanning';
   setGuide(false);
   setCameraMessage('Kamera wird geöffnet …', 'Bitte einen Moment warten.');
+  animateViewIn(elements.cameraStage, 'forward');
   elements.cameraStage.focus({ preventScroll: true });
   void requestCamera();
 }
 
-function startDocument(documentId) {
+function startDocument(documentId, pressedCard = null) {
   if (
     busy ||
     pendingConfirm ||
@@ -1243,6 +1351,23 @@ function startDocument(documentId) {
   selectedDocumentIds.add(documentId);
   selectionLocked = true;
   renderDashboard();
+  if (
+    pressedCard &&
+    typeof requestAnimationFrame === 'function' &&
+    !prefersReducedMotion() &&
+    !documentOpenPending
+  ) {
+    documentOpenPending = true;
+    pressedCard.classList.add('is-activating');
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        documentOpenPending = false;
+        pressedCard.classList.remove('is-activating');
+        openDocument(documentId);
+      });
+    });
+    return;
+  }
   openDocument(documentId);
 }
 
@@ -1265,7 +1390,7 @@ function backToDashboard() {
     selectedDocumentIds.clear();
     selectionLocked = false;
   }
-  showDashboard();
+  showDashboard('backward');
 }
 
 function resumeSelectedDocumentAfterClaim() {
@@ -1482,6 +1607,7 @@ function advanceAfterFinalizedDocumentSlot(finalizedSide) {
     elements.cameraStage.hidden = false;
     state = 'scanning';
     elements.app.setAttribute('aria-busy', 'false');
+    animateViewIn(elements.cameraStage, 'forward');
     elements.cameraStage.focus({ preventScroll: true });
     resumeOrRequestCamera();
     return;
@@ -1492,7 +1618,7 @@ function advanceAfterFinalizedDocumentSlot(finalizedSide) {
   clearAcceptedCapture();
   selectedDocumentIds.clear();
   selectionLocked = false;
-  showDashboard();
+  showDashboard('backward');
 }
 
 async function useCapture() {
@@ -1554,6 +1680,7 @@ async function useCapture() {
       elements.cameraStage.hidden = false;
       state = 'scanning';
       elements.app.setAttribute('aria-busy', 'false');
+      animateViewIn(elements.cameraStage, 'forward');
       resumeOrRequestCamera();
       return;
     }
@@ -1572,6 +1699,7 @@ async function useCapture() {
       clearAcceptedCapture();
       elements.review.hidden = true;
       elements.cameraStage.hidden = false;
+      animateViewIn(elements.cameraStage, 'backward');
       setCameraMessage(
         'Aufnahme muss wiederholt werden.',
         error instanceof Error ? error.message : 'Bitte erneut versuchen.',
@@ -1640,11 +1768,12 @@ function repeatCapture() {
   clearAcceptedCapture();
   elements.review.hidden = true;
   if (side === 'tax-id') {
-    showTaxIdStage();
+    showTaxIdStage('backward');
     return;
   }
   elements.cameraStage.hidden = false;
   elements.app.setAttribute('aria-busy', 'false');
+  animateViewIn(elements.cameraStage, 'backward');
   if (mediaStream) beginAnalysis();
   else resumeOrRequestCamera();
 }
@@ -1675,12 +1804,14 @@ function completeSession(returnToDashboard = false) {
     elements.dashboardStatus.textContent = 'Übertragung abgeschlossen.';
     elements.finishSession.textContent = 'Abgeschlossen';
     renderDashboard();
+    animateViewIn(elements.dashboard, 'backward');
     elements.dashboardTitle.focus({ preventScroll: true });
     return;
   }
   state = 'complete';
   elements.dashboard.hidden = true;
   elements.complete.hidden = false;
+  animateViewIn(elements.complete, 'forward');
   elements.complete.focus({ preventScroll: true });
 }
 
@@ -1828,12 +1959,48 @@ async function start() {
   }
 }
 
+let activePressedButton = null;
+let pressedButtonTimer = 0;
+
+function enabledButtonFromTarget(target) {
+  const button = target?.closest?.('button');
+  return button instanceof HTMLButtonElement && !button.disabled
+    ? button
+    : null;
+}
+
+function beginButtonPress(button) {
+  window.clearTimeout(pressedButtonTimer);
+  pressedButtonTimer = 0;
+  if (activePressedButton && activePressedButton !== button) {
+    activePressedButton.classList.remove('is-pressing');
+  }
+  activePressedButton = button;
+  button.classList.add('is-pressing');
+}
+
+function endButtonPress(linger = true) {
+  const button = activePressedButton;
+  activePressedButton = null;
+  if (!button) return;
+  window.clearTimeout(pressedButtonTimer);
+  if (!linger) {
+    button.classList.remove('is-pressing');
+    return;
+  }
+  pressedButtonTimer = window.setTimeout(() => {
+    pressedButtonTimer = 0;
+    button.classList.remove('is-pressing');
+  }, 110);
+}
+
 elements.startCamera.addEventListener('click', () => void requestCamera());
 elements.documentList.addEventListener('click', (event) => {
+  if (documentOpenPending) return;
   const card = event.target.closest('[data-document]');
   if (!(card instanceof HTMLButtonElement)) return;
   if (selectionLocked) openDocument(card.dataset.document);
-  else startDocument(card.dataset.document);
+  else startDocument(card.dataset.document, card);
 });
 elements.taxIdBack.addEventListener('click', backFromTaxIdStage);
 elements.taxIdType.addEventListener('click', showTaxIdInput);
@@ -1856,13 +2023,48 @@ elements.finishSession.addEventListener(
   'click',
   () => void finishDocumentSession(),
 );
-elements.torchToggle.addEventListener(
-  'click',
-  () => void setTorch(!torchEnabled),
-);
+elements.torchToggle.addEventListener('click', () => {
+  if (!torchPending) void setTorch(!torchEnabled);
+});
 elements.consent.addEventListener('change', updateReviewControls);
 elements.useCapture.addEventListener('click', () => void useCapture());
 elements.repeatCapture.addEventListener('click', repeatCapture);
+document.addEventListener(
+  'pointerdown',
+  (event) => {
+    if (event.button !== 0 || event.isPrimary === false) return;
+    const button = enabledButtonFromTarget(event.target);
+    if (button) beginButtonPress(button);
+  },
+  { passive: true },
+);
+document.addEventListener('pointerup', () => endButtonPress(true), {
+  passive: true,
+});
+document.addEventListener('pointercancel', () => endButtonPress(false), {
+  passive: true,
+});
+document.addEventListener('keydown', (event) => {
+  if (event.repeat || (event.key !== 'Enter' && event.key !== ' ')) return;
+  const button = enabledButtonFromTarget(event.target);
+  if (!button) return;
+  beginButtonPress(button);
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    requestAnimationFrame(() => {
+      if (!button.isConnected || button.disabled) {
+        endButtonPress(false);
+        return;
+      }
+      button.click();
+      endButtonPress(true);
+    });
+  }
+});
+document.addEventListener('keyup', (event) => {
+  if (event.key === ' ') endButtonPress(true);
+});
+window.addEventListener('blur', () => endButtonPress(false));
 window.addEventListener('pagehide', disposeSensitiveState, { once: true });
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden') {

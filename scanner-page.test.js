@@ -13,15 +13,15 @@ test('standalone page contains a live camera guide without external code', async
   assert.match(html, /<video[^>]+autoplay[^>]+muted[^>]+playsinline/);
   assert.match(html, /id="id-guide"/);
   assert.match(html, /id="countdown"/);
-  assert.match(html, /scanner\.js\?v=20261009-clean-directory-v11/);
-  assert.match(html, /styles\.css\?v=20261009-clean-directory-v11/);
+  assert.match(html, /scanner\.js\?v=20261009-smooth-controls-v12/);
+  assert.match(html, /styles\.css\?v=20261009-smooth-controls-v12/);
   assert.match(html, /<title>Sicherheit Nord · Ausweisscan<\/title>/);
   assert.match(
     html,
     /rel="canonical" href="https:\/\/sicherheit-nord-ausweisscan\.web\.app\/"/,
   );
   assert.match(html, /<meta name="referrer" content="no-referrer" \/>/);
-  assert.match(html, /legacy-redirect\.js\?v=20261009-clean-directory-v11/);
+  assert.match(html, /legacy-redirect\.js\?v=20261009-smooth-controls-v12/);
   assert.match(html, /class="guide-orientation">OBERKANTE</);
   assert.match(html, /Vorderseite Personalausweis/);
   assert.match(html, /sicherheit-nord-logo\.png/);
@@ -96,7 +96,7 @@ test('standalone page contains a live camera guide without external code', async
   );
   assert.match(script, /navigator\.vibrate\(CAPTURE_VIBRATION_PATTERN\)/);
   assert.match(script, /capabilities\?\.torch === true/);
-  assert.match(script, /advanced: \[\{ torch: Boolean\(enabled\) \}\]/);
+  assert.match(script, /advanced: \[\{ torch: requested \}\]/);
   assert.match(script, /activeVideoTrack[\s\S]+?torch: false/);
   assert.match(script, /holdState\.ready && lastPositionedBox/);
   assert.match(script, /triggerCaptureFeedback\(\)/);
@@ -119,8 +119,8 @@ test('standalone page contains a live camera guide without external code', async
   );
   assert.match(script, /prepareEncryptedCapture/);
   assert.match(script, /protocolVersion,/);
-  assert.match(script, /scanner-core\.js\?v=20261009-clean-directory-v11/);
-  assert.match(script, /relay-client\.js\?v=20261009-clean-directory-v11/);
+  assert.match(script, /scanner-core\.js\?v=20261009-smooth-controls-v12/);
+  assert.match(script, /relay-client\.js\?v=20261009-smooth-controls-v12/);
   assert.match(
     script,
     /open: 'Auswählbar',[\s\S]+?selected: 'Offen',[\s\S]+?'in-progress': 'Offen',[\s\S]+?complete: 'Abgeschlossen'/,
@@ -174,11 +174,11 @@ test('standalone page contains a live camera guide without external code', async
   );
   assert.match(
     script,
-    /function startDocument\(documentId\)[\s\S]+?selectedDocumentIds\.add\(documentId\)[\s\S]+?openDocument\(documentId\)/,
+    /function startDocument\(documentId, pressedCard = null\)[\s\S]+?selectedDocumentIds\.add\(documentId\)[\s\S]+?classList\.add\('is-activating'\)[\s\S]+?requestAnimationFrame\(\(\) => \{[\s\S]+?requestAnimationFrame\(\(\) => \{[\s\S]+?openDocument\(documentId\)/,
   );
   const openDocumentStart = script.indexOf('function openDocument(documentId)');
   const startDocumentStart = script.indexOf(
-    'function startDocument(documentId)',
+    'function startDocument(documentId, pressedCard = null)',
     openDocumentStart,
   );
   const openDocumentSource = script.slice(
@@ -196,7 +196,7 @@ test('standalone page contains a live camera guide without external code', async
     script,
     /sessionClaimed = true;[\s\S]+?resumeSelectedDocumentAfterClaim\(\)/,
   );
-  assert.match(script, /else startDocument\(card\.dataset\.document\)/);
+  assert.match(script, /else startDocument\(card\.dataset\.document, card\)/);
   assert.doesNotMatch(
     script,
     /toggleDocumentSelection|startSelectedDocuments|elements\.startSelection/,
@@ -213,6 +213,18 @@ test('standalone page contains a live camera guide without external code', async
   assert.match(script, /Rückseite Personalausweis/);
   assert.match(script, /acceptedCapture = result;[\s\S]{0,250}stopCamera\(\)/);
   assert.match(script, /visibilitychange/);
+  assert.match(script, /function animateViewIn\(/);
+  assert.match(script, /prefersReducedMotion\(\)/);
+  assert.match(
+    script,
+    /torchEnabled = requested;[\s\S]+?torchPending = true;[\s\S]+?updateTorchUi\(\);[\s\S]+?await track\.applyConstraints/,
+  );
+  assert.match(script, /document\.addEventListener\([\s\S]+?'pointerdown'/);
+  assert.match(script, /classList\.add\('is-pressing'\)/);
+  assert.match(
+    script,
+    /event\.key === 'Enter'[\s\S]+?event\.preventDefault\(\)[\s\S]+?requestAnimationFrame\([\s\S]+?button\.click\(\)/,
+  );
   assert.match(
     script,
     /visibilitychange[\s\S]+?document\.visibilityState === 'hidden'[\s\S]+?stopCamera\(\)[\s\S]+?setCameraMessage\('Kamera wird geöffnet …',[\s\S]+?void requestCamera\(\)/,
@@ -234,11 +246,28 @@ test('standalone page contains a live camera guide without external code', async
   assert.match(styles, /\.document-card\.is-selected/);
   assert.match(
     styles,
+    /\.document-card:focus-visible,[\s\S]+?\.primary:focus-visible,[\s\S]+?\.secondary:focus-visible,[\s\S]+?\.tax-id-back:focus-visible/,
+  );
+  assert.match(
+    styles,
     /#dashboard-title:focus,[\s\S]+?#complete:focus\s*\{[\s\S]+?outline:\s*none/,
   );
   assert.match(
     styles,
-    /\.document-card:not\(:disabled\):active,[\s\S]+?\.primary:not\(:disabled\):active,[\s\S]+?\.secondary:not\(:disabled\):active,[\s\S]+?\.camera-action:not\(:disabled\):active\s*\{[\s\S]+?scale:\s*0\.98[\s\S]+?filter:\s*brightness\(0\.95\)[\s\S]+?transition-duration:\s*70ms/,
+    /\.document-card\.is-pressing,[\s\S]+?\.document-card\.is-activating\s*\{[\s\S]+?scale:\s*0\.975[\s\S]+?translate:\s*0 1px[\s\S]+?0 0 0 3px/,
+  );
+  assert.match(
+    styles,
+    /\.primary\.is-pressing,[\s\S]+?\.tax-id-back\.is-pressing\s*\{[\s\S]+?scale:\s*0\.975/,
+  );
+  assert.match(
+    styles,
+    /\.camera-action\.is-pressing\s*\{[\s\S]+?scale:\s*0\.965/,
+  );
+  assert.match(styles, /\.torch-toggle\.is-pending/);
+  assert.match(
+    styles,
+    /@media \(prefers-reduced-motion: reduce\)[\s\S]+?animation-duration:\s*0\.01ms !important[\s\S]+?transition-duration:\s*0\.01ms !important/,
   );
   assert.match(styles, /grid-auto-rows:\s*1fr/);
   assert.match(styles, /\.document-card:not\(:disabled\):hover/);
@@ -325,11 +354,11 @@ test('a dashboard return detaches an in-flight camera request from the next docu
   const source = await readFile(scannerUrl, 'utf8');
   const instrumentedSource = source
     .replace(
-      "from './scanner-core.js?v=20261009-clean-directory-v11';",
+      "from './scanner-core.js?v=20261009-smooth-controls-v12';",
       `from ${JSON.stringify(scannerCoreUrl)};`,
     )
     .replace(
-      "from './relay-client.js?v=20261009-clean-directory-v11';",
+      "from './relay-client.js?v=20261009-smooth-controls-v12';",
       `from ${JSON.stringify(relayClientUrl)};`,
     )
     .replace(
@@ -339,6 +368,8 @@ export {
   advanceAfterFinalizedDocumentSlot,
   backToDashboard,
   requestCamera,
+  resetTorchState,
+  setTorch,
   startDocument,
   stopCamera,
 };
@@ -415,6 +446,27 @@ export function cameraLifecycleState() {
     hasCameraRequest: Boolean(cameraRequest),
   };
 }
+export function prepareTorchLifecycleTest(track, enabled = false) {
+  torchOperationId += 1;
+  activeVideoTrack = track;
+  torchSupported = true;
+  torchEnabled = enabled;
+  torchPending = false;
+  updateTorchUi();
+}
+export function torchLifecycleState() {
+  return {
+    enabled: torchEnabled,
+    pending: torchPending,
+    hidden: elements.torchToggle.hidden,
+    disabled: elements.torchToggle.disabled,
+    text: elements.torchToggle.textContent,
+    isOn: elements.torchToggle.classList.contains('is-on'),
+    isPending: elements.torchToggle.classList.contains('is-pending'),
+    ariaPressed: elements.torchToggle.attributes.get('aria-pressed'),
+    ariaBusy: elements.torchToggle.attributes.get('aria-busy'),
+  };
+}
 `,
     );
   assert.doesNotMatch(
@@ -440,15 +492,32 @@ export function cameraLifecycleState() {
       writable: true,
       value,
     });
-  const classList = () => ({
-    add() {},
-    remove() {},
-    toggle() {},
-  });
+  const classList = () => {
+    const names = new Set();
+    return {
+      add(...items) {
+        for (const item of items) names.add(item);
+      },
+      remove(...items) {
+        for (const item of items) names.delete(item);
+      },
+      toggle(name, force) {
+        const enabled = force === undefined ? !names.has(name) : Boolean(force);
+        if (enabled) names.add(name);
+        else names.delete(name);
+        return enabled;
+      },
+      contains(name) {
+        return names.has(name);
+      },
+    };
+  };
   const elements = new Map();
   const element = (id) => {
     if (!elements.has(id)) {
+      const attributes = new Map();
       const value = {
+        attributes,
         checked: false,
         classList: classList(),
         disabled: false,
@@ -457,9 +526,13 @@ export function cameraLifecycleState() {
         hidden: false,
         parentElement: { classList: classList() },
         pause() {},
-        removeAttribute() {},
+        removeAttribute(name) {
+          attributes.delete(name);
+        },
         removeEventListener() {},
-        setAttribute() {},
+        setAttribute(name, value) {
+          attributes.set(name, String(value));
+        },
         addEventListener() {},
         style: {},
         textContent: '',
@@ -480,10 +553,12 @@ export function cameraLifecycleState() {
   };
   const deferred = () => {
     let resolve;
-    const promise = new Promise((next) => {
+    let reject;
+    const promise = new Promise((next, fail) => {
       resolve = next;
+      reject = fail;
     });
-    return { promise, resolve };
+    return { promise, reject, resolve };
   };
   const createStream = () => {
     const track = {
@@ -691,6 +766,131 @@ export function cameraLifecycleState() {
     assert.equal(element('start-camera').hidden, true);
     scanner.stopCamera();
     assert.equal(resumedStream.track.stopCalls, 1);
+
+    const torchActivation = deferred();
+    let torchConstraintCalls = 0;
+    const torchTrack = {
+      applyConstraints() {
+        torchConstraintCalls += 1;
+        return torchActivation.promise;
+      },
+    };
+    scanner.prepareTorchLifecycleTest(torchTrack);
+    const torchResult = scanner.setTorch(true);
+    assert.deepEqual(scanner.torchLifecycleState(), {
+      enabled: true,
+      pending: true,
+      hidden: false,
+      disabled: true,
+      text: 'Licht aus',
+      isOn: true,
+      isPending: true,
+      ariaPressed: 'true',
+      ariaBusy: 'true',
+    });
+    assert.equal(torchConstraintCalls, 1);
+    assert.equal(await scanner.setTorch(false), false);
+    assert.equal(
+      torchConstraintCalls,
+      1,
+      'pending torch changes are serialized',
+    );
+    torchActivation.resolve();
+    assert.equal(await torchResult, true);
+    assert.deepEqual(scanner.torchLifecycleState(), {
+      enabled: true,
+      pending: false,
+      hidden: false,
+      disabled: false,
+      text: 'Licht aus',
+      isOn: true,
+      isPending: false,
+      ariaPressed: 'true',
+      ariaBusy: undefined,
+    });
+
+    const torchFailure = deferred();
+    const failingTrack = {
+      applyConstraints() {
+        return torchFailure.promise;
+      },
+    };
+    scanner.prepareTorchLifecycleTest(failingTrack);
+    const failedTorchResult = scanner.setTorch(true);
+    assert.equal(scanner.torchLifecycleState().text, 'Licht aus');
+    torchFailure.reject(new Error('camera driver rejected torch'));
+    assert.equal(await failedTorchResult, false);
+    assert.deepEqual(scanner.torchLifecycleState(), {
+      enabled: false,
+      pending: false,
+      hidden: false,
+      disabled: false,
+      text: 'Licht an',
+      isOn: false,
+      isPending: false,
+      ariaPressed: 'false',
+      ariaBusy: undefined,
+    });
+
+    const torchDeactivation = deferred();
+    const deactivationTrack = {
+      applyConstraints() {
+        return torchDeactivation.promise;
+      },
+    };
+    scanner.prepareTorchLifecycleTest(deactivationTrack, true);
+    const deactivationResult = scanner.setTorch(false);
+    assert.deepEqual(scanner.torchLifecycleState(), {
+      enabled: false,
+      pending: true,
+      hidden: false,
+      disabled: true,
+      text: 'Licht an',
+      isOn: false,
+      isPending: true,
+      ariaPressed: 'false',
+      ariaBusy: 'true',
+    });
+    torchDeactivation.reject(new Error('camera driver rejected torch off'));
+    assert.equal(await deactivationResult, false);
+    assert.deepEqual(scanner.torchLifecycleState(), {
+      enabled: true,
+      pending: false,
+      hidden: false,
+      disabled: false,
+      text: 'Licht aus',
+      isOn: true,
+      isPending: false,
+      ariaPressed: 'true',
+      ariaBusy: undefined,
+    });
+
+    const staleTorch = deferred();
+    let staleConstraintCalls = 0;
+    const staleTrack = {
+      applyConstraints() {
+        staleConstraintCalls += 1;
+        return staleConstraintCalls === 1
+          ? staleTorch.promise
+          : Promise.resolve();
+      },
+    };
+    scanner.prepareTorchLifecycleTest(staleTrack);
+    const staleTorchResult = scanner.setTorch(true);
+    scanner.resetTorchState();
+    staleTorch.resolve();
+    assert.equal(await staleTorchResult, false);
+    assert.deepEqual(scanner.torchLifecycleState(), {
+      enabled: false,
+      pending: false,
+      hidden: true,
+      disabled: false,
+      text: 'Licht an',
+      isOn: false,
+      isPending: false,
+      ariaPressed: 'false',
+      ariaBusy: undefined,
+    });
   } finally {
     for (const [name, descriptor] of originalGlobals) {
       if (descriptor) Object.defineProperty(globalThis, name, descriptor);
