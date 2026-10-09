@@ -13,15 +13,15 @@ test('standalone page contains a live camera guide without external code', async
   assert.match(html, /<video[^>]+autoplay[^>]+muted[^>]+playsinline/);
   assert.match(html, /id="id-guide"/);
   assert.match(html, /id="countdown"/);
-  assert.match(html, /scanner\.js\?v=20261009-smooth-controls-v12/);
-  assert.match(html, /styles\.css\?v=20261009-smooth-controls-v12/);
+  assert.match(html, /scanner\.js\?v=20261009-finish-recovery-v13/);
+  assert.match(html, /styles\.css\?v=20261009-finish-recovery-v13/);
   assert.match(html, /<title>Sicherheit Nord · Ausweisscan<\/title>/);
   assert.match(
     html,
     /rel="canonical" href="https:\/\/sicherheit-nord-ausweisscan\.web\.app\/"/,
   );
   assert.match(html, /<meta name="referrer" content="no-referrer" \/>/);
-  assert.match(html, /legacy-redirect\.js\?v=20261009-smooth-controls-v12/);
+  assert.match(html, /legacy-redirect\.js\?v=20261009-finish-recovery-v13/);
   assert.match(html, /class="guide-orientation">OBERKANTE</);
   assert.match(html, /Vorderseite Personalausweis/);
   assert.match(html, /sicherheit-nord-logo\.png/);
@@ -42,8 +42,23 @@ test('standalone page contains a live camera guide without external code', async
     html,
     /id="start-selection"|Dokumentauswahl fertigstellen/,
   );
-  assert.match(html, /id="finish-session"[\s\S]{0,80}Scan abschließen/);
+  assert.match(
+    html,
+    /id="finish-session"[\s\S]{0,100}disabled[\s\S]{0,80}Fertig/,
+  );
+  assert.match(html, /id="document-finish" class="document-finish">/);
   assert.match(html, /id="dashboard-status"/);
+  const documentPositions = [
+    'identity-card',
+    'passport',
+    'health-card',
+    'tax-id',
+  ].map((documentId) => html.indexOf(`data-document="${documentId}"`));
+  assert.ok(documentPositions.every((position) => position >= 0));
+  assert.deepEqual(
+    documentPositions,
+    [...documentPositions].sort((left, right) => left - right),
+  );
   for (const documentId of [
     'identity-card',
     'tax-id',
@@ -119,8 +134,11 @@ test('standalone page contains a live camera guide without external code', async
   );
   assert.match(script, /prepareEncryptedCapture/);
   assert.match(script, /protocolVersion,/);
-  assert.match(script, /scanner-core\.js\?v=20261009-smooth-controls-v12/);
-  assert.match(script, /relay-client\.js\?v=20261009-smooth-controls-v12/);
+  assert.match(script, /scanner-core\.js\?v=20261009-finish-recovery-v13/);
+  assert.match(script, /relay-client\.js\?v=20261009-finish-recovery-v13/);
+  assert.match(script, /callRelayWithRecovery\(/);
+  assert.match(script, /'claim'[\s\S]+?shouldContinue: \(\) => !sessionClosed/);
+  assert.match(script, /elements\.documentFinish\.hidden = false/);
   assert.match(
     script,
     /open: 'Auswählbar',[\s\S]+?selected: 'Offen',[\s\S]+?'in-progress': 'Offen',[\s\S]+?complete: 'Abgeschlossen'/,
@@ -161,7 +179,7 @@ test('standalone page contains a live camera guide without external code', async
   );
   assert.match(
     script,
-    /async function finishDocumentSession\(\)[\s\S]+?canCompleteDocumentSession\(completedSlots\)[\s\S]+?await confirmCompletedSession\(\)[\s\S]+?completeSession\(true\)/,
+    /async function finishDocumentSession\(\)[\s\S]+?pendingConfirm[\s\S]+?state !== 'dashboard'[\s\S]+?canCompleteDocumentSession\(completedSlots\)[\s\S]+?await confirmCompletedSession\(\)[\s\S]+?completeSession\(true\)/,
   );
   assert.doesNotMatch(
     script,
@@ -354,11 +372,11 @@ test('a dashboard return detaches an in-flight camera request from the next docu
   const source = await readFile(scannerUrl, 'utf8');
   const instrumentedSource = source
     .replace(
-      "from './scanner-core.js?v=20261009-smooth-controls-v12';",
+      "from './scanner-core.js?v=20261009-finish-recovery-v13';",
       `from ${JSON.stringify(scannerCoreUrl)};`,
     )
     .replace(
-      "from './relay-client.js?v=20261009-smooth-controls-v12';",
+      "from './relay-client.js?v=20261009-finish-recovery-v13';",
       `from ${JSON.stringify(relayClientUrl)};`,
     )
     .replace(
@@ -382,7 +400,11 @@ export function prepareDashboardLifecycleTest() {
   busy = false;
   selectionLocked = false;
   selectedDocumentIds.clear();
+  completedSlots.clear();
+  elements.dashboard.hidden = false;
+  elements.complete.hidden = true;
   state = 'dashboard';
+  renderDashboard();
 }
 export function preparePreclaimLifecycleTest() {
   protocolVersion = '2';
@@ -634,6 +656,18 @@ export function torchLifecycleState() {
     const secondStream = createStream();
 
     scanner.prepareDashboardLifecycleTest();
+    assert.deepEqual(scanner.documentLifecycleState(), {
+      state: 'dashboard',
+      sessionClosed: false,
+      pendingConfirm: false,
+      selectionLocked: false,
+      selectedDocumentIds: [],
+      completedSlots: [],
+      dashboardHidden: false,
+      completeHidden: true,
+      finishHidden: false,
+      finishDisabled: true,
+    });
     scanner.startDocument('identity-card');
     const firstResult = scanner.cameraLifecycleState().cameraPromise;
     scanner.backToDashboard();
@@ -724,7 +758,7 @@ export function torchLifecycleState() {
       dashboardHidden: false,
       completeHidden: true,
       finishHidden: false,
-      finishDisabled: false,
+      finishDisabled: true,
     });
 
     scanner.prepareDashboardLifecycleTest();

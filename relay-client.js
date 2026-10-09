@@ -228,6 +228,39 @@ function discoveryWait(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
+export async function callRelayWithRecovery(
+  endpoint,
+  action,
+  request,
+  {
+    fetchImpl = globalThis.fetch,
+    timeoutMs = 30_000,
+    waitImpl = discoveryWait,
+    shouldContinue = () => true,
+    retryDelayMs = 900,
+  } = {},
+) {
+  while (shouldContinue()) {
+    try {
+      const response = await callRelayWithOneRetry(endpoint, action, request, {
+        fetchImpl,
+        timeoutMs,
+      });
+      if (shouldContinue()) return response;
+      break;
+    } catch (error) {
+      if (!(error instanceof RelayError) || !error.retryable) throw error;
+      if (!shouldContinue()) break;
+      await waitImpl(retryDelayMs);
+    }
+  }
+  throw new RelayError(
+    'Die sichere Verbindung wurde beendet.',
+    false,
+    'cancelled',
+  );
+}
+
 export async function waitForStaticSession(
   endpoint,
   stationId,
@@ -246,11 +279,17 @@ export async function waitForStaticSession(
     throw new TypeError('Das Abfrageintervall ist ungültig.');
   }
   while (shouldContinue()) {
-    const response = await callRelayWithOneRetry(
+    const response = await callRelayWithRecovery(
       endpoint,
       'discover',
       { stationId },
-      { fetchImpl, timeoutMs },
+      {
+        fetchImpl,
+        timeoutMs,
+        waitImpl,
+        shouldContinue,
+        retryDelayMs: intervalMs,
+      },
     );
     if (response.status === 'waiting') {
       await waitImpl(intervalMs);

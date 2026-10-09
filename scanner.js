@@ -20,9 +20,9 @@ import {
   portraitCaptureLayout,
   scannerDocumentsForVersion,
   updateHoldState,
-} from './scanner-core.js?v=20261009-smooth-controls-v12';
+} from './scanner-core.js?v=20261009-finish-recovery-v13';
 import {
-  callRelayWithOneRetry,
+  callRelayWithRecovery,
   createPhoneSession,
   decryptStaticBootstrap,
   disposePreparedCapture,
@@ -32,7 +32,7 @@ import {
   RelayError,
   uploadChunksConcurrently,
   waitForStaticSession,
-} from './relay-client.js?v=20261009-smooth-controls-v12';
+} from './relay-client.js?v=20261009-finish-recovery-v13';
 
 const MAX_FINALIZE_ATTEMPTS = 5;
 const LIVE_ANALYSIS_INTERVAL_MS = 145;
@@ -43,6 +43,7 @@ const VIDEO_FALLBACK_MIN_SHORT_EDGE = 400;
 const VIDEO_FALLBACK_MIN_SHARPNESS = 12;
 const VIDEO_FALLBACK_OUTPUT_LONG_EDGE = 1_600;
 const CAPTURE_VIBRATION_PATTERN = [80, 40, 120];
+const RELAY_RECOVERY_DELAY_MS = 900;
 const TAX_ID_PAGE_WIDTH = 1_400;
 const TAX_ID_PAGE_HEIGHT = 1_980;
 
@@ -1129,10 +1130,6 @@ const STATUS_COPY = Object.freeze({
 function renderDashboard() {
   const documents = availableDocuments();
   elements.taxIdCard.hidden = documentSetVersion < 3;
-  const hasCompletedDocument = documents.some(
-    (documentDefinition) =>
-      documentScanStatus(documentDefinition, completedSlots) === 'complete',
-  );
   for (const documentDefinition of documents) {
     const selected = selectedDocumentIds.has(documentDefinition.id);
     const scanStatus = documentScanStatus(documentDefinition, completedSlots);
@@ -1166,10 +1163,12 @@ function renderDashboard() {
       );
     }
   }
-  elements.documentFinish.hidden = !hasCompletedDocument;
+  elements.documentFinish.hidden = false;
   elements.finishSession.disabled =
     busy ||
+    pendingConfirm ||
     sessionClosed ||
+    state !== 'dashboard' ||
     !sessionClaimed ||
     !canCompleteDocumentSession(completedSlots);
 }
@@ -1490,14 +1489,23 @@ async function transferPreparedPayload(prepared) {
   await uploadChunksConcurrently(
     prepared.chunks,
     async (index, chunkBase64) => {
-      await callRelayWithOneRetry(endpoint, 'upload', {
-        sessionId,
-        phoneSession,
-        side: prepared.side,
-        index,
-        totalChunks: prepared.chunks.length,
-        chunkBase64,
-      });
+      await callRelayWithRecovery(
+        endpoint,
+        'upload',
+        {
+          sessionId,
+          phoneSession,
+          side: prepared.side,
+          index,
+          totalChunks: prepared.chunks.length,
+          chunkBase64,
+        },
+        {
+          waitImpl: wait,
+          shouldContinue: () => !sessionClosed,
+          retryDelayMs: RELAY_RECOVERY_DELAY_MS,
+        },
+      );
     },
     {
       maxConcurrency: 2,
@@ -1509,10 +1517,15 @@ async function transferPreparedPayload(prepared) {
   elements.reviewStatus.textContent = 'Übertragung wird abgeschlossen …';
   setProgress(90);
   for (let attempt = 0; attempt < MAX_FINALIZE_ATTEMPTS; attempt += 1) {
-    const response = await callRelayWithOneRetry(
+    const response = await callRelayWithRecovery(
       endpoint,
       'finalize',
       prepared.manifest,
+      {
+        waitImpl: wait,
+        shouldContinue: () => !sessionClosed,
+        retryDelayMs: RELAY_RECOVERY_DELAY_MS,
+      },
     );
     if (response.status === 'finalized') {
       setProgress(100);
@@ -1555,14 +1568,23 @@ async function transferPreparedPayload(prepared) {
     await uploadChunksConcurrently(
       missing,
       async (_missingIndex, index) => {
-        await callRelayWithOneRetry(endpoint, 'upload', {
-          sessionId,
-          phoneSession,
-          side: prepared.side,
-          index,
-          totalChunks: prepared.chunks.length,
-          chunkBase64: prepared.chunks[index],
-        });
+        await callRelayWithRecovery(
+          endpoint,
+          'upload',
+          {
+            sessionId,
+            phoneSession,
+            side: prepared.side,
+            index,
+            totalChunks: prepared.chunks.length,
+            chunkBase64: prepared.chunks[index],
+          },
+          {
+            waitImpl: wait,
+            shouldContinue: () => !sessionClosed,
+            retryDelayMs: RELAY_RECOVERY_DELAY_MS,
+          },
+        );
       },
       { maxConcurrency: 2 },
     );
@@ -1579,9 +1601,16 @@ async function confirmCompletedSession() {
       left.localeCompare(right),
     );
   }
-  const response = await callRelayWithOneRetry(endpoint, 'confirm', {
-    ...request,
-  });
+  const response = await callRelayWithRecovery(
+    endpoint,
+    'confirm',
+    { ...request },
+    {
+      waitImpl: wait,
+      shouldContinue: () => !sessionClosed,
+      retryDelayMs: RELAY_RECOVERY_DELAY_MS,
+    },
+  );
   if (response.status !== 'ready') {
     throw new RelayError(
       'Der sichere Dienst hat einen unerwarteten Status geliefert.',
@@ -1691,6 +1720,7 @@ async function useCapture() {
     await confirmCompletedSession();
     completeSession();
   } catch (error) {
+    if (sessionClosed) return;
     if (error instanceof RelayError && !error.retryable) {
       fail(error.message);
       return;
@@ -1725,7 +1755,9 @@ async function useCapture() {
 async function finishDocumentSession() {
   if (
     busy ||
+    pendingConfirm ||
     sessionClosed ||
+    state !== 'dashboard' ||
     !sessionClaimed ||
     protocolVersion !== '2' ||
     captureMode !== 'documents-v2' ||
@@ -1744,6 +1776,7 @@ async function finishDocumentSession() {
     await confirmCompletedSession();
     completeSession(true);
   } catch (error) {
+    if (sessionClosed) return;
     if (error instanceof RelayError && !error.retryable) {
       fail(error.message);
       return;
@@ -1757,7 +1790,7 @@ async function finishDocumentSession() {
     if (!sessionClosed) {
       elements.finishSession.textContent = pendingConfirm
         ? 'Abschluss erneut versuchen'
-        : 'Scan abschließen';
+        : 'Fertig';
       renderDashboard();
     }
   }
@@ -1901,11 +1934,20 @@ async function start() {
     let uploadCapability = bootstrap.uploadCapability;
     let claimed;
     try {
-      claimed = await callRelayWithOneRetry(endpoint, 'claim', {
-        sessionId,
-        uploadCapability,
-        phoneSession,
-      });
+      claimed = await callRelayWithRecovery(
+        endpoint,
+        'claim',
+        {
+          sessionId,
+          uploadCapability,
+          phoneSession,
+        },
+        {
+          waitImpl: wait,
+          shouldContinue: () => !sessionClosed,
+          retryDelayMs: RELAY_RECOVERY_DELAY_MS,
+        },
+      );
     } finally {
       uploadCapability = '';
     }
@@ -1951,6 +1993,7 @@ async function start() {
     if (mediaStream) beginAnalysis();
     else if (!cameraRequest) elements.startCamera.hidden = false;
   } catch (error) {
+    if (sessionClosed) return;
     fail(
       error instanceof Error
         ? error.message

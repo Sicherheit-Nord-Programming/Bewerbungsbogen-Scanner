@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import {
   bytesToBase64url,
   callRelay,
+  callRelayWithRecovery,
   decryptStaticBootstrap,
   disposePreparedCapture,
   importCaptureKey,
@@ -78,6 +79,73 @@ test('terminal relay failures without a public server message request a fresh QR
       error?.message ===
         'Die Scan-Verbindung ist nicht mehr gültig. Bitte scannen Sie den QR-Code am Laptop erneut.',
   );
+});
+
+test('retryable relay interruptions recover with the exact same request', async () => {
+  const request = {
+    sessionId: SESSION_ID,
+    uploadCapability: 'U'.repeat(43),
+    phoneSession: 'P'.repeat(43),
+  };
+  const requestBodies = [];
+  const waits = [];
+  let attempts = 0;
+  const result = await callRelayWithRecovery(
+    'https://script.google.com/macros/s/example/exec',
+    'claim',
+    request,
+    {
+      fetchImpl: async (_url, options) => {
+        attempts += 1;
+        requestBodies.push(options.body);
+        if (attempts <= 4) throw new Error('temporary mobile network loss');
+        return Response.json({
+          schemaVersion: 1,
+          action: 'claim',
+          status: 'claimed',
+          expiresAt: 1_900_000_000_000,
+        });
+      },
+      waitImpl: async (milliseconds) => waits.push(milliseconds),
+    },
+  );
+  assert.equal(result.status, 'claimed');
+  assert.equal(attempts, 5);
+  assert.deepEqual(waits, [900, 900]);
+  assert.equal(new Set(requestBodies).size, 1);
+  assert.deepEqual(JSON.parse(requestBodies[0]).request, request);
+});
+
+test('terminal relay failures are never hidden behind recovery retries', async () => {
+  let attempts = 0;
+  const waits = [];
+  await assert.rejects(
+    callRelayWithRecovery(
+      'https://script.google.com/macros/s/example/exec',
+      'claim',
+      {
+        sessionId: SESSION_ID,
+        uploadCapability: 'U'.repeat(43),
+        phoneSession: 'P'.repeat(43),
+      },
+      {
+        fetchImpl: async () => {
+          attempts += 1;
+          return Response.json({
+            schemaVersion: 1,
+            action: 'claim',
+            status: 'failed',
+            code: 'expired',
+            retryable: false,
+          });
+        },
+        waitImpl: async (milliseconds) => waits.push(milliseconds),
+      },
+    ),
+    (error) => error?.code === 'expired' && error?.retryable === false,
+  );
+  assert.equal(attempts, 1);
+  assert.deepEqual(waits, []);
 });
 
 test('static station discovery polls only while waiting and returns the available bootstrap', async () => {
