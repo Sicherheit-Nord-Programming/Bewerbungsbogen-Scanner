@@ -16,15 +16,15 @@ test('standalone page contains a live camera guide without external code', async
   assert.match(html, /points="6,1 94,1 99\.5,99 0\.5,99"/);
   assert.doesNotMatch(html, /class="corner /);
   assert.match(html, /id="countdown"/);
-  assert.match(html, /scanner\.js\?v=20261010-perspective-guide-v15/);
-  assert.match(html, /styles\.css\?v=20261010-perspective-guide-v15/);
+  assert.match(html, /scanner\.js\?v=20261010-tax-id-start-v16/);
+  assert.match(html, /styles\.css\?v=20261010-tax-id-start-v16/);
   assert.match(html, /<title>Sicherheit Nord · Ausweisscan<\/title>/);
   assert.match(
     html,
     /rel="canonical" href="https:\/\/sicherheit-nord-ausweisscan\.web\.app\/"/,
   );
   assert.match(html, /<meta name="referrer" content="no-referrer" \/>/);
-  assert.match(html, /legacy-redirect\.js\?v=20261010-perspective-guide-v15/);
+  assert.match(html, /legacy-redirect\.js\?v=20261010-tax-id-start-v16/);
   assert.match(html, /class="guide-orientation">OBERKANTE</);
   assert.match(html, /Vorderseite Personalausweis/);
   assert.match(html, /sicherheit-nord-logo\.png/);
@@ -142,8 +142,8 @@ test('standalone page contains a live camera guide without external code', async
   );
   assert.match(script, /prepareEncryptedCapture/);
   assert.match(script, /protocolVersion,/);
-  assert.match(script, /scanner-core\.js\?v=20261010-perspective-guide-v15/);
-  assert.match(script, /relay-client\.js\?v=20261010-perspective-guide-v15/);
+  assert.match(script, /scanner-core\.js\?v=20261010-tax-id-start-v16/);
+  assert.match(script, /relay-client\.js\?v=20261010-tax-id-start-v16/);
   assert.match(script, /callRelayWithRecovery\(/);
   assert.match(script, /'claim'[\s\S]+?shouldContinue: \(\) => !sessionClosed/);
   assert.match(script, /elements\.documentFinish\.hidden = false/);
@@ -197,7 +197,7 @@ test('standalone page contains a live camera guide without external code', async
   assert.match(script, /showDashboard\(\)/);
   assert.match(
     script,
-    /parsedBootstrap\.version === '2'[\s\S]+?showDashboard\(\)[\s\S]+?await resolveScannerBootstrap\(parsedBootstrap\)/,
+    /parsedBootstrap\.version === '2'[\s\S]+?documentSetVersion =\s*parsedBootstrap\.version === '3' \? 3 : 2;[\s\S]+?showDashboard\(\)[\s\S]+?await resolveScannerBootstrap\(parsedBootstrap\)/,
   );
   assert.match(
     script,
@@ -443,11 +443,11 @@ test('a dashboard return detaches an in-flight camera request from the next docu
   const source = await readFile(scannerUrl, 'utf8');
   const instrumentedSource = source
     .replace(
-      "from './scanner-core.js?v=20261010-perspective-guide-v15';",
+      "from './scanner-core.js?v=20261010-tax-id-start-v16';",
       `from ${JSON.stringify(scannerCoreUrl)};`,
     )
     .replace(
-      "from './relay-client.js?v=20261010-perspective-guide-v15';",
+      "from './relay-client.js?v=20261010-tax-id-start-v16';",
       `from ${JSON.stringify(relayClientUrl)};`,
     )
     .replace(

@@ -20,7 +20,7 @@ import {
   portraitCaptureLayout,
   scannerDocumentsForVersion,
   updateHoldState,
-} from './scanner-core.js?v=20261010-perspective-guide-v15';
+} from './scanner-core.js?v=20261010-tax-id-start-v16';
 import {
   callRelayWithRecovery,
   createPhoneSession,
@@ -32,7 +32,7 @@ import {
   RelayError,
   uploadChunksConcurrently,
   waitForStaticSession,
-} from './relay-client.js?v=20261010-perspective-guide-v15';
+} from './relay-client.js?v=20261010-tax-id-start-v16';
 
 const MAX_FINALIZE_ATTEMPTS = 5;
 const LIVE_ANALYSIS_INTERVAL_MS = 145;
@@ -2051,6 +2051,7 @@ async function start() {
       // still publishing its current session.
       protocolVersion = '2';
       captureMode = 'documents-v2';
+      documentSetVersion = parsedBootstrap.version === '3' ? 3 : 2;
       showDashboard();
     }
     const bootstrap = await resolveScannerBootstrap(parsedBootstrap);
