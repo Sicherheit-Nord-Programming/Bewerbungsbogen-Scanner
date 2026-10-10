@@ -20,7 +20,7 @@ import {
   portraitCaptureLayout,
   scannerDocumentsForVersion,
   updateHoldState,
-} from './scanner-core.js?v=20261009-finish-recovery-v13';
+} from './scanner-core.js?v=20261010-document-preview-v14';
 import {
   callRelayWithRecovery,
   createPhoneSession,
@@ -32,7 +32,7 @@ import {
   RelayError,
   uploadChunksConcurrently,
   waitForStaticSession,
-} from './relay-client.js?v=20261009-finish-recovery-v13';
+} from './relay-client.js?v=20261010-document-preview-v14';
 
 const MAX_FINALIZE_ATTEMPTS = 5;
 const LIVE_ANALYSIS_INTERVAL_MS = 145;
@@ -44,6 +44,7 @@ const VIDEO_FALLBACK_MIN_SHARPNESS = 12;
 const VIDEO_FALLBACK_OUTPUT_LONG_EDGE = 1_600;
 const CAPTURE_VIBRATION_PATTERN = [80, 40, 120];
 const RELAY_RECOVERY_DELAY_MS = 900;
+const UPLOAD_CONCURRENCY = 4;
 const TAX_ID_PAGE_WIDTH = 1_400;
 const TAX_ID_PAGE_HEIGHT = 1_980;
 
@@ -57,6 +58,14 @@ const elements = Object.fromEntries(
     'document-finish',
     'finish-session',
     'dashboard-status',
+    'document-preview',
+    'document-preview-title',
+    'document-preview-back',
+    'document-preview-grid',
+    'image-preview',
+    'image-preview-title',
+    'image-preview-close',
+    'image-preview-image',
     'tax-id-card',
     'tax-id-stage',
     'tax-id-title',
@@ -109,6 +118,7 @@ let captureMode = 'identity-v1';
 let documentSetVersion = 2;
 let side = 'front';
 const completedSlots = new Set();
+const completedCapturePreviews = new Map();
 const selectedDocumentIds = new Set();
 let selectionLocked = false;
 let state = 'starting';
@@ -136,6 +146,8 @@ let captureFeedbackTimer = 0;
 let documentOpenPending = false;
 let activeViewAnimation = null;
 let activeViewAnimationTarget = null;
+let previewReturnState = 'dashboard';
+let expandedPreviewFocusTarget = null;
 
 const SLOT_PROFILES = Object.freeze({
   front: {
@@ -217,10 +229,7 @@ function setGuide(valid) {
 }
 
 function setProgress(percent) {
-  elements.uploadProgress.firstElementChild.style.width = `${Math.max(
-    0,
-    Math.min(100, percent),
-  )}%`;
+  elements.uploadProgress.firstElementChild.style.width = `${Math.max(0, Math.min(100, percent))}%`;
 }
 
 function wait(milliseconds) {
@@ -438,6 +447,42 @@ function clearRetryPayload() {
   retryPayload = null;
 }
 
+function clearCompletedCapturePreviews() {
+  for (const preview of completedCapturePreviews.values()) {
+    URL.revokeObjectURL(preview.url);
+  }
+  completedCapturePreviews.clear();
+  elements.documentPreviewGrid.replaceChildren();
+  elements.imagePreviewImage.removeAttribute('src');
+  elements.imagePreview.hidden = true;
+  elements.documentPreview.inert = false;
+  elements.documentPreview.removeAttribute('aria-hidden');
+  expandedPreviewFocusTarget = null;
+}
+
+function rememberCompletedCapturePreview(slot) {
+  if (!(acceptedCapture?.blob instanceof Blob)) return false;
+  const previous = completedCapturePreviews.get(slot);
+  if (previous) URL.revokeObjectURL(previous.url);
+  try {
+    completedCapturePreviews.set(slot, {
+      url: URL.createObjectURL(acceptedCapture.blob),
+      width: acceptedCapture.width,
+      height: acceptedCapture.height,
+    });
+    return true;
+  } catch {
+    completedCapturePreviews.delete(slot);
+    return false;
+  }
+}
+
+function hasCompletedDocumentPreview(documentDefinition) {
+  return documentDefinition.slots.every((slot) =>
+    completedCapturePreviews.has(slot),
+  );
+}
+
 function disposeSensitiveState() {
   sessionClosed = true;
   documentOpenPending = false;
@@ -449,6 +494,7 @@ function disposeSensitiveState() {
   stopCamera();
   clearAcceptedCapture();
   clearRetryPayload();
+  clearCompletedCapturePreviews();
   encryptionKey = null;
   phoneSession = '';
   sessionId = '';
@@ -472,6 +518,8 @@ function fail(message) {
   elements.cameraStage.hidden = true;
   elements.review.hidden = true;
   elements.taxIdStage.hidden = true;
+  elements.documentPreview.hidden = true;
+  elements.imagePreview.hidden = true;
   elements.complete.hidden = true;
   elements.fatal.hidden = false;
   elements.fatalMessage.textContent = message;
@@ -859,10 +907,7 @@ function showCaptureReview(result, consentCopy) {
 }
 
 function taxIdDisplayValue(value) {
-  return `${value.slice(0, 2)} ${value.slice(2, 5)} ${value.slice(
-    5,
-    8,
-  )} ${value.slice(8)}`;
+  return `${value.slice(0, 2)} ${value.slice(2, 5)} ${value.slice(5, 8)} ${value.slice(8)}`;
 }
 
 async function renderTypedTaxId(value) {
@@ -1127,12 +1172,99 @@ const STATUS_COPY = Object.freeze({
   complete: 'Abgeschlossen',
 });
 
+function documentSlotLabel(slot) {
+  if (slot.endsWith('-front') || slot === 'front') return 'Vorderseite';
+  if (slot.endsWith('-back') || slot === 'back') return 'Rückseite';
+  if (slot === 'passport-data') return 'Datenseite';
+  if (slot === 'tax-id') return 'Dokument';
+  return SLOT_PROFILES[slot]?.title || 'Dokument';
+}
+
+function closeExpandedDocumentPreview({ restoreFocus = true } = {}) {
+  if (elements.imagePreview.hidden) return;
+  elements.imagePreview.hidden = true;
+  elements.imagePreviewImage.removeAttribute('src');
+  elements.documentPreview.inert = false;
+  elements.documentPreview.removeAttribute('aria-hidden');
+  const focusTarget = expandedPreviewFocusTarget;
+  expandedPreviewFocusTarget = null;
+  if (restoreFocus && focusTarget?.isConnected) {
+    focusTarget.focus({ preventScroll: true });
+  }
+}
+
+function openExpandedDocumentPreview(documentDefinition, slot, focusTarget) {
+  const preview = completedCapturePreviews.get(slot);
+  if (!preview) return;
+  expandedPreviewFocusTarget = focusTarget;
+  elements.imagePreviewTitle.textContent = `${documentDefinition.title} – ${documentSlotLabel(slot)}`;
+  elements.imagePreviewImage.src = preview.url;
+  elements.imagePreviewImage.alt = `${documentSlotLabel(slot)} ${documentDefinition.title}`;
+  elements.documentPreview.inert = true;
+  elements.documentPreview.setAttribute('aria-hidden', 'true');
+  elements.imagePreview.hidden = false;
+  elements.imagePreviewClose.focus({ preventScroll: true });
+}
+
+function renderCompletedDocumentPreview(documentDefinition) {
+  if (!hasCompletedDocumentPreview(documentDefinition)) return false;
+  const fragment = document.createDocumentFragment();
+  for (const slot of documentDefinition.slots) {
+    const preview = completedCapturePreviews.get(slot);
+    if (!preview) return false;
+    const label = documentSlotLabel(slot);
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'document-preview-thumbnail';
+    button.setAttribute('aria-label', `${label} groß anzeigen`);
+    const image = document.createElement('img');
+    image.src = preview.url;
+    image.alt = `${label} ${documentDefinition.title}`;
+    image.decoding = 'async';
+    image.className =
+      preview.height > preview.width ? 'is-portrait' : 'is-landscape';
+    const caption = document.createElement('span');
+    caption.textContent = label;
+    button.append(image, caption);
+    button.addEventListener('click', () =>
+      openExpandedDocumentPreview(documentDefinition, slot, button),
+    );
+    fragment.append(button);
+  }
+  elements.documentPreviewGrid.replaceChildren(fragment);
+  return true;
+}
+
+function showCompletedDocumentPreview(documentDefinition) {
+  if (!renderCompletedDocumentPreview(documentDefinition)) return;
+  previewReturnState = state === 'dashboard-complete' ? state : 'dashboard';
+  elements.documentPreviewTitle.textContent = documentDefinition.title;
+  elements.dashboard.hidden = true;
+  elements.documentPreview.hidden = false;
+  state = 'document-preview';
+  animateViewIn(elements.documentPreview, 'forward');
+  elements.documentPreviewTitle.focus({ preventScroll: true });
+}
+
+function closeCompletedDocumentPreview() {
+  closeExpandedDocumentPreview({ restoreFocus: false });
+  elements.documentPreview.hidden = true;
+  elements.documentPreviewGrid.replaceChildren();
+  elements.dashboard.hidden = false;
+  state = previewReturnState;
+  renderDashboard();
+  elements.dashboardTitle.focus({ preventScroll: true });
+}
+
 function renderDashboard() {
   const documents = availableDocuments();
   elements.taxIdCard.hidden = documentSetVersion < 3;
   for (const documentDefinition of documents) {
     const selected = selectedDocumentIds.has(documentDefinition.id);
     const scanStatus = documentScanStatus(documentDefinition, completedSlots);
+    const previewAvailable =
+      scanStatus === 'complete' &&
+      hasCompletedDocumentPreview(documentDefinition);
     const status =
       sessionClosed && scanStatus === 'open'
         ? 'not-scanned'
@@ -1149,17 +1281,18 @@ function renderDashboard() {
       statusElement.textContent = STATUS_COPY[status];
       statusElement.className = `document-status is-${status}`;
       card.disabled =
-        busy ||
+        (busy && !sessionClosed) ||
         pendingConfirm ||
-        sessionClosed ||
-        scanStatus === 'complete' ||
-        (selectionLocked && !selected);
+        (scanStatus === 'complete'
+          ? !previewAvailable
+          : sessionClosed || (selectionLocked && !selected));
       card.classList.toggle('is-selected', selected);
       card.classList.toggle('is-not-selected', selectionLocked && !selected);
+      card.classList.toggle('is-previewable', previewAvailable);
       card.removeAttribute('aria-pressed');
       card.setAttribute(
         'aria-label',
-        `${documentDefinition.title}: ${STATUS_COPY[status]}`,
+        `${documentDefinition.title}: ${STATUS_COPY[status]}${previewAvailable ? ', Vorschau öffnen' : ''}`,
       );
     }
   }
@@ -1180,6 +1313,8 @@ function showDashboard(direction = 'forward') {
   elements.cameraStage.hidden = true;
   elements.review.hidden = true;
   elements.taxIdStage.hidden = true;
+  elements.documentPreview.hidden = true;
+  elements.imagePreview.hidden = true;
   elements.dashboard.hidden = false;
   elements.backToDashboard.hidden = true;
   if (!sessionClosed) elements.dashboardStatus.textContent = '';
@@ -1508,7 +1643,7 @@ async function transferPreparedPayload(prepared) {
       );
     },
     {
-      maxConcurrency: 2,
+      maxConcurrency: UPLOAD_CONCURRENCY,
       onProgress: (completed, total) => {
         setProgress((completed / total) * 90);
       },
@@ -1586,7 +1721,7 @@ async function transferPreparedPayload(prepared) {
           },
         );
       },
-      { maxConcurrency: 2 },
+      { maxConcurrency: UPLOAD_CONCURRENCY },
     );
   }
 }
@@ -1695,6 +1830,9 @@ async function useCapture() {
     elements.useCapture.textContent = 'Wird übertragen …';
     await transferPreparedPayload(retryPayload);
     const finalizedSide = retryPayload.side;
+    if (protocolVersion === '2') {
+      rememberCompletedCapturePreview(finalizedSide);
+    }
     clearRetryPayload();
     if (protocolVersion === '2') {
       advanceAfterFinalizedDocumentSlot(finalizedSide);
@@ -1826,6 +1964,8 @@ function completeSession(returnToDashboard = false) {
   elements.cameraStage.hidden = true;
   elements.review.hidden = true;
   elements.taxIdStage.hidden = true;
+  elements.documentPreview.hidden = true;
+  elements.imagePreview.hidden = true;
   elements.fatal.hidden = true;
   elements.app.setAttribute('aria-busy', 'false');
   if (returnToDashboard) {
@@ -2042,9 +2182,25 @@ elements.documentList.addEventListener('click', (event) => {
   if (documentOpenPending) return;
   const card = event.target.closest('[data-document]');
   if (!(card instanceof HTMLButtonElement)) return;
-  if (selectionLocked) openDocument(card.dataset.document);
+  const documentDefinition = availableDocuments().find(
+    (candidate) => candidate.id === card.dataset.document,
+  );
+  if (!documentDefinition) return;
+  if (
+    documentScanStatus(documentDefinition, completedSlots) === 'complete' &&
+    hasCompletedDocumentPreview(documentDefinition)
+  ) {
+    showCompletedDocumentPreview(documentDefinition);
+  } else if (selectionLocked) openDocument(card.dataset.document);
   else startDocument(card.dataset.document, card);
 });
+elements.documentPreviewBack.addEventListener(
+  'click',
+  closeCompletedDocumentPreview,
+);
+elements.imagePreviewClose.addEventListener('click', () =>
+  closeExpandedDocumentPreview(),
+);
 elements.taxIdBack.addEventListener('click', backFromTaxIdStage);
 elements.taxIdType.addEventListener('click', showTaxIdInput);
 elements.taxIdPhoto.addEventListener('click', () => {
@@ -2088,6 +2244,18 @@ document.addEventListener('pointercancel', () => endButtonPress(false), {
   passive: true,
 });
 document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape') {
+    if (!elements.imagePreview.hidden) {
+      event.preventDefault();
+      closeExpandedDocumentPreview();
+      return;
+    }
+    if (!elements.documentPreview.hidden) {
+      event.preventDefault();
+      closeCompletedDocumentPreview();
+      return;
+    }
+  }
   if (event.repeat || (event.key !== 'Enter' && event.key !== ' ')) return;
   const button = enabledButtonFromTarget(event.target);
   if (!button) return;

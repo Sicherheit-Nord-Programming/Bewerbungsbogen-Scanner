@@ -185,7 +185,7 @@ export async function callRelayWithOneRetry(
 export async function uploadChunksConcurrently(
   chunks,
   uploadChunk,
-  { maxConcurrency = 2, onProgress = () => {} } = {},
+  { maxConcurrency = 4, onProgress = () => {} } = {},
 ) {
   if (!Array.isArray(chunks) || chunks.length < 1) {
     throw new TypeError('Die verschlüsselte Aufnahme ist unvollständig.');

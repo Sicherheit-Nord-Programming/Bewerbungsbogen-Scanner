@@ -23,11 +23,14 @@
       content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:; media-src blob:; connect-src https://script.google.com https://*.googleusercontent.com; base-uri 'none'; form-action 'none'"
     />
     <title>Sicherheit Nord · Ausweisscan</title>
-    <script src="./legacy-redirect.js?v=20261009-finish-recovery-v13"></script>
-    <link rel="stylesheet" href="./styles.css?v=20261009-finish-recovery-v13" />
+    <script src="./legacy-redirect.js?v=20261010-document-preview-v14"></script>
+    <link
+      rel="stylesheet"
+      href="./styles.css?v=20261010-document-preview-v14"
+    />
     <script
       type="module"
-      src="./scanner.js?v=20261009-finish-recovery-v13"
+      src="./scanner.js?v=20261010-document-preview-v14"
     ></script>
   </head>
   <body>
@@ -120,6 +123,49 @@
               aria-live="polite"
             ></p>
           </div>
+        </div>
+      </section>
+
+      <section
+        id="document-preview"
+        class="document-preview"
+        hidden
+        aria-labelledby="document-preview-title"
+      >
+        <div class="document-preview-card">
+          <button
+            id="document-preview-back"
+            class="document-preview-back"
+            type="button"
+          >
+            Übersicht
+          </button>
+          <h1 id="document-preview-title" tabindex="-1">Dokument</h1>
+          <div id="document-preview-grid" class="document-preview-grid"></div>
+        </div>
+      </section>
+
+      <section
+        id="image-preview"
+        class="image-preview"
+        hidden
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="image-preview-title"
+      >
+        <button
+          id="image-preview-close"
+          class="image-preview-close"
+          type="button"
+        >
+          Schließen
+        </button>
+        <div class="image-preview-content">
+          <h2 id="image-preview-title">Dokumentansicht</h2>
+          <img
+            id="image-preview-image"
+            alt="Große Vorschau der erfassten Dokumentenseite"
+          />
         </div>
       </section>
 

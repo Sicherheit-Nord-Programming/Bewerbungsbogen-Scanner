@@ -13,15 +13,15 @@ test('standalone page contains a live camera guide without external code', async
   assert.match(html, /<video[^>]+autoplay[^>]+muted[^>]+playsinline/);
   assert.match(html, /id="id-guide"/);
   assert.match(html, /id="countdown"/);
-  assert.match(html, /scanner\.js\?v=20261009-finish-recovery-v13/);
-  assert.match(html, /styles\.css\?v=20261009-finish-recovery-v13/);
+  assert.match(html, /scanner\.js\?v=20261010-document-preview-v14/);
+  assert.match(html, /styles\.css\?v=20261010-document-preview-v14/);
   assert.match(html, /<title>Sicherheit Nord · Ausweisscan<\/title>/);
   assert.match(
     html,
     /rel="canonical" href="https:\/\/sicherheit-nord-ausweisscan\.web\.app\/"/,
   );
   assert.match(html, /<meta name="referrer" content="no-referrer" \/>/);
-  assert.match(html, /legacy-redirect\.js\?v=20261009-finish-recovery-v13/);
+  assert.match(html, /legacy-redirect\.js\?v=20261010-document-preview-v14/);
   assert.match(html, /class="guide-orientation">OBERKANTE</);
   assert.match(html, /Vorderseite Personalausweis/);
   assert.match(html, /sicherheit-nord-logo\.png/);
@@ -48,6 +48,11 @@ test('standalone page contains a live camera guide without external code', async
   );
   assert.match(html, /id="document-finish" class="document-finish">/);
   assert.match(html, /id="dashboard-status"/);
+  assert.match(html, /id="document-preview"/);
+  assert.match(html, /id="document-preview-grid"/);
+  assert.match(html, /id="document-preview-back"[\s\S]{0,120}Übersicht/);
+  assert.match(html, /id="image-preview"[\s\S]{0,100}role="dialog"/);
+  assert.match(html, /id="image-preview-image"/);
   const documentPositions = [
     'identity-card',
     'passport',
@@ -134,8 +139,8 @@ test('standalone page contains a live camera guide without external code', async
   );
   assert.match(script, /prepareEncryptedCapture/);
   assert.match(script, /protocolVersion,/);
-  assert.match(script, /scanner-core\.js\?v=20261009-finish-recovery-v13/);
-  assert.match(script, /relay-client\.js\?v=20261009-finish-recovery-v13/);
+  assert.match(script, /scanner-core\.js\?v=20261010-document-preview-v14/);
+  assert.match(script, /relay-client\.js\?v=20261010-document-preview-v14/);
   assert.match(script, /callRelayWithRecovery\(/);
   assert.match(script, /'claim'[\s\S]+?shouldContinue: \(\) => !sessionClosed/);
   assert.match(script, /elements\.documentFinish\.hidden = false/);
@@ -148,7 +153,8 @@ test('standalone page contains a live camera guide without external code', async
   assert.match(script, /function normalizeTaxIdPhoto\(file\)/);
   assert.match(script, /documentSetVersion/);
   assert.match(script, /uploadChunksConcurrently\(/);
-  assert.match(script, /maxConcurrency:\s*2/);
+  assert.match(script, /const UPLOAD_CONCURRENCY = 4/);
+  assert.match(script, /maxConcurrency:\s*UPLOAD_CONCURRENCY/);
   assert.match(script, /Sichere Übertragung …/);
   assert.match(script, /Übertragung wird abgeschlossen …/);
   assert.match(script, /Wird verschlüsselt …/);
@@ -229,6 +235,58 @@ test('standalone page contains a live camera guide without external code', async
   );
   assert.match(script, /side = 'back'/);
   assert.match(script, /Rückseite Personalausweis/);
+  assert.match(script, /const completedCapturePreviews = new Map\(\)/);
+  assert.match(
+    script,
+    /await transferPreparedPayload\(retryPayload\);[\s\S]+?rememberCompletedCapturePreview\(finalizedSide\);[\s\S]+?advanceAfterFinalizedDocumentSlot\(finalizedSide\)/,
+  );
+  assert.match(
+    script,
+    /function rememberCompletedCapturePreview\(slot\)[\s\S]+?URL\.createObjectURL\(acceptedCapture\.blob\)/,
+  );
+  assert.match(
+    script,
+    /function clearCompletedCapturePreviews\(\)[\s\S]+?URL\.revokeObjectURL\(preview\.url\)[\s\S]+?completedCapturePreviews\.clear\(\)/,
+  );
+  assert.match(
+    script,
+    /function disposeSensitiveState\(\)[\s\S]+?clearCompletedCapturePreviews\(\)/,
+  );
+  assert.match(
+    script,
+    /scanStatus === 'complete'[\s\S]+?hasCompletedDocumentPreview\(documentDefinition\)[\s\S]+?showCompletedDocumentPreview\(documentDefinition\)/,
+  );
+  assert.match(
+    script,
+    /const previewAvailable =\s*scanStatus === 'complete'[\s\S]+?hasCompletedDocumentPreview\(documentDefinition\)[\s\S]+?scanStatus === 'complete'[\s\S]+?\? !previewAvailable/,
+  );
+  assert.match(script, /\(busy && !sessionClosed\)/);
+  const completeSessionStart = script.indexOf(
+    'function completeSession(returnToDashboard = false)',
+  );
+  const resolveBootstrapStart = script.indexOf(
+    'async function resolveScannerBootstrap',
+    completeSessionStart,
+  );
+  const completeSessionSource = script.slice(
+    completeSessionStart,
+    resolveBootstrapStart,
+  );
+  assert.ok(
+    completeSessionStart >= 0 && resolveBootstrapStart > completeSessionStart,
+  );
+  assert.doesNotMatch(completeSessionSource, /clearCompletedCapturePreviews/);
+  assert.match(completeSessionSource, /state = 'dashboard-complete'/);
+  assert.match(script, /documentSlotLabel\(slot\)/);
+  assert.match(script, /event\.key === 'Escape'/);
+  assert.match(
+    script,
+    /elements\.documentPreview\.inert = true;[\s\S]+?setAttribute\('aria-hidden', 'true'\)/,
+  );
+  assert.match(
+    script,
+    /elements\.documentPreview\.inert = false;[\s\S]+?removeAttribute\('aria-hidden'\)/,
+  );
   assert.match(script, /acceptedCapture = result;[\s\S]{0,250}stopCamera\(\)/);
   assert.match(script, /visibilitychange/);
   assert.match(script, /function animateViewIn\(/);
@@ -262,6 +320,12 @@ test('standalone page contains a live camera guide without external code', async
   );
   assert.match(styles, /\.document-status\.is-in-progress/);
   assert.match(styles, /\.document-card\.is-selected/);
+  assert.match(styles, /\.document-preview-grid\s*\{[\s\S]+?repeat\(2,/);
+  assert.match(styles, /\.document-preview-thumbnail/);
+  assert.match(
+    styles,
+    /#image-preview-image\s*\{[\s\S]+?object-fit:\s*contain/,
+  );
   assert.match(
     styles,
     /\.document-card:focus-visible,[\s\S]+?\.primary:focus-visible,[\s\S]+?\.secondary:focus-visible,[\s\S]+?\.tax-id-back:focus-visible/,
@@ -372,11 +436,11 @@ test('a dashboard return detaches an in-flight camera request from the next docu
   const source = await readFile(scannerUrl, 'utf8');
   const instrumentedSource = source
     .replace(
-      "from './scanner-core.js?v=20261009-finish-recovery-v13';",
+      "from './scanner-core.js?v=20261010-document-preview-v14';",
       `from ${JSON.stringify(scannerCoreUrl)};`,
     )
     .replace(
-      "from './relay-client.js?v=20261009-finish-recovery-v13';",
+      "from './relay-client.js?v=20261010-document-preview-v14';",
       `from ${JSON.stringify(relayClientUrl)};`,
     )
     .replace(

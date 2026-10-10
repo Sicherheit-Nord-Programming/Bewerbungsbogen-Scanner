@@ -392,7 +392,7 @@ test('version-2 capture binds the document slot into the v2 header and AAD', asy
   disposePreparedCapture(prepared);
 });
 
-test('chunk upload uses at most two workers and reports only completed chunks', async () => {
+test('chunk upload uses at most four workers and reports only completed chunks', async () => {
   const gates = Array.from({ length: 5 }, () => Promise.withResolvers());
   const started = [];
   const progress = [];
@@ -409,7 +409,7 @@ test('chunk upload uses at most two workers and reports only completed chunks', 
       active -= 1;
     },
     {
-      maxConcurrency: 2,
+      maxConcurrency: 4,
       onProgress: (completed, total) => progress.push([completed, total]),
     },
   );
@@ -418,25 +418,23 @@ test('chunk upload uses at most two workers and reports only completed chunks', 
   assert.deepEqual(started, [
     [0, 'zero'],
     [1, 'one'],
+    [2, 'two'],
+    [3, 'three'],
   ]);
   assert.deepEqual(progress, []);
 
-  gates[1].resolve();
-  await new Promise((resolve) => setImmediate(resolve));
-  assert.deepEqual(started.at(-1), [2, 'two']);
-  assert.deepEqual(progress, [[1, 5]]);
-
-  gates[0].resolve();
-  await new Promise((resolve) => setImmediate(resolve));
-  assert.deepEqual(started.at(-1), [3, 'three']);
   gates[2].resolve();
   await new Promise((resolve) => setImmediate(resolve));
   assert.deepEqual(started.at(-1), [4, 'four']);
+  assert.deepEqual(progress, [[1, 5]]);
+
+  gates[0].resolve();
+  gates[1].resolve();
   gates[3].resolve();
   gates[4].resolve();
   await transfer;
 
-  assert.equal(maximumActive, 2);
+  assert.equal(maximumActive, 4);
   assert.deepEqual(
     started.map(([index]) => index).sort((left, right) => left - right),
     [0, 1, 2, 3, 4],
