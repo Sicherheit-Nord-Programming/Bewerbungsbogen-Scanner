@@ -23,14 +23,14 @@
       content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' blob: data:; media-src blob:; connect-src https://script.google.com https://*.googleusercontent.com; base-uri 'none'; form-action 'none'"
     />
     <title>Sicherheit Nord · Ausweisscan</title>
-    <script src="./legacy-redirect.js?v=20261010-document-preview-v14"></script>
+    <script src="./legacy-redirect.js?v=20261010-perspective-guide-v15"></script>
     <link
       rel="stylesheet"
-      href="./styles.css?v=20261010-document-preview-v14"
+      href="./styles.css?v=20261010-perspective-guide-v15"
     />
     <script
       type="module"
-      src="./scanner.js?v=20261010-document-preview-v14"
+      src="./scanner.js?v=20261010-perspective-guide-v15"
     ></script>
   </head>
   <body>
@@ -252,11 +252,24 @@
           Licht an
         </button>
         <div id="id-guide" class="id-guide is-red" aria-hidden="true">
+          <svg
+            class="guide-outline"
+            viewBox="0 0 100 100"
+            preserveAspectRatio="none"
+            focusable="false"
+          >
+            <polygon
+              class="guide-outline-halo"
+              points="6,1 94,1 99.5,99 0.5,99"
+              vector-effect="non-scaling-stroke"
+            ></polygon>
+            <polygon
+              class="guide-outline-color"
+              points="6,1 94,1 99.5,99 0.5,99"
+              vector-effect="non-scaling-stroke"
+            ></polygon>
+          </svg>
           <span class="guide-orientation">OBERKANTE</span>
-          <span class="corner top-left"></span>
-          <span class="corner top-right"></span>
-          <span class="corner bottom-left"></span>
-          <span class="corner bottom-right"></span>
         </div>
         <div id="countdown" class="countdown" aria-live="assertive"></div>
         <div class="camera-copy">

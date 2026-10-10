@@ -84,6 +84,81 @@ function frameFixture({
   return { data, width, height };
 }
 
+function perspectiveFrameFixture({
+  width = 480,
+  height = 640,
+  guide = { x: 110, y: 65, width: 260, height: 412 },
+  topInsetFraction = 0.08,
+  rollDegrees = 0,
+  backgroundValue = 34,
+  cardValue = 210,
+  textValue = 64,
+  noiseAmplitude = 0,
+} = {}) {
+  const center = {
+    x: guide.x + guide.width / 2,
+    y: guide.y + guide.height / 2,
+  };
+  const radians = (rollDegrees * Math.PI) / 180;
+  const cosine = Math.cos(radians);
+  const sine = Math.sin(radians);
+  const rotate = ({ x, y }) => {
+    const relativeX = x - center.x;
+    const relativeY = y - center.y;
+    return {
+      x: center.x + relativeX * cosine - relativeY * sine,
+      y: center.y + relativeX * sine + relativeY * cosine,
+    };
+  };
+  const inset = guide.width * topInsetFraction;
+  const quad = [
+    rotate({ x: guide.x + inset, y: guide.y }),
+    rotate({ x: guide.x + guide.width - inset, y: guide.y }),
+    rotate({ x: guide.x + guide.width, y: guide.y + guide.height }),
+    rotate({ x: guide.x, y: guide.y + guide.height }),
+  ];
+  let noiseSeed = 0x45d9f3b;
+  const insideQuad = (x, y) => {
+    let sign = 0;
+    for (let index = 0; index < quad.length; index += 1) {
+      const start = quad[index];
+      const end = quad[(index + 1) % quad.length];
+      const cross =
+        (end.x - start.x) * (y - start.y) - (end.y - start.y) * (x - start.x);
+      if (Math.abs(cross) < 0.01) continue;
+      const currentSign = Math.sign(cross);
+      if (sign === 0) sign = currentSign;
+      else if (currentSign !== sign) return false;
+    }
+    return true;
+  };
+  const data = new Uint8ClampedArray(width * height * 4);
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const inside = insideQuad(x + 0.5, y + 0.5);
+      const text =
+        inside &&
+        y > guide.y + 30 &&
+        y < guide.y + guide.height - 25 &&
+        ((y - guide.y) % 31 < 4 ||
+          ((x - guide.x) % 47 < 4 && x < guide.x + guide.width * 0.63));
+      const baseValue = text ? textValue : inside ? cardValue : backgroundValue;
+      noiseSeed = (Math.imul(noiseSeed, 1_664_525) + 1_013_904_223) >>> 0;
+      const noise =
+        noiseAmplitude > 0
+          ? ((noiseSeed >>> 24) / 255) * noiseAmplitude * 2 - noiseAmplitude
+          : 0;
+      const value = Math.max(0, Math.min(255, Math.round(baseValue + noise)));
+      const offset = (y * width + x) * 4;
+      data[offset] = value;
+      data[offset + 1] = value;
+      data[offset + 2] = value;
+      data[offset + 3] = 255;
+    }
+  }
+  return { data, width, height };
+}
+
 function sharpCapture(width = 1_400, height = 900) {
   const data = new Uint8ClampedArray(width * height * 4);
   for (let y = 0; y < height; y += 1) {
@@ -390,6 +465,49 @@ test('accepts a low-contrast ID-1 card and anchors the hold to the visible guide
     guide,
   );
   assert.equal(emptyGuide.positioned, false);
+});
+
+test('accepts a mildly perspective ID card and ordinary sideways roll', () => {
+  const guide = { x: 110, y: 65, width: 260, height: 412 };
+  for (const topInsetFraction of [0.08, 0.14]) {
+    const accepted = analyzeFramePosition(
+      perspectiveFrameFixture({ guide, topInsetFraction }),
+      guide,
+    );
+    assert.equal(
+      accepted.positioned,
+      true,
+      `top inset ${topInsetFraction} should be accepted`,
+    );
+    assert.ok(accepted.strongEdges >= 3);
+  }
+
+  for (const rollDegrees of [-6, 6]) {
+    const accepted = analyzeFramePosition(
+      perspectiveFrameFixture({ guide, topInsetFraction: 0.08, rollDegrees }),
+      guide,
+    );
+    assert.equal(
+      accepted.positioned,
+      true,
+      `${rollDegrees} degrees of roll should be accepted`,
+    );
+  }
+
+  const noisyCameraFrame = analyzeFramePosition(
+    perspectiveFrameFixture({
+      guide,
+      topInsetFraction: 0.08,
+      rollDegrees: 3,
+      noiseAmplitude: 20,
+    }),
+    guide,
+  );
+  assert.equal(
+    noisyCameraFrame.positioned,
+    true,
+    'ordinary low-light camera noise must not block the green guide',
+  );
 });
 
 test('requires three real seconds of stable positioning and tolerates brief jitter', () => {

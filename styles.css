@@ -1,11 +1,7 @@
 :root {
   color-scheme: dark;
   font-family:
-    system-ui,
-    -apple-system,
-    BlinkMacSystemFont,
-    'Segoe UI',
-    sans-serif;
+    system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   color: #fff;
   background: #05090d;
   -webkit-tap-highlight-color: transparent;
@@ -604,15 +600,34 @@ button {
   width: min(75vw, 44dvh, 300px);
   aspect-ratio: 53.98 / 85.6;
   transform: translate(-50%, -50%);
-  border: 3px solid color-mix(in srgb, var(--guide-color) 62%, transparent);
-  border-radius: 17px;
-  box-shadow:
-    0 0 0 1px rgba(0, 0, 0, 0.4),
-    0 0 24px color-mix(in srgb, var(--guide-color) 38%, transparent);
-  transition:
-    border-color 140ms ease,
-    box-shadow 140ms ease;
   pointer-events: none;
+}
+
+.guide-outline {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  filter: drop-shadow(
+    0 0 12px color-mix(in srgb, var(--guide-color) 42%, transparent)
+  );
+}
+
+.guide-outline polygon {
+  fill: none;
+  stroke-linejoin: round;
+}
+
+.guide-outline-halo {
+  stroke: rgba(0, 0, 0, 0.62);
+  stroke-width: 8px;
+}
+
+.guide-outline-color {
+  stroke: var(--guide-color);
+  stroke-width: 4px;
+  transition: stroke 140ms ease;
 }
 
 .id-guide.is-green {
@@ -648,47 +663,11 @@ button {
 
 .id-guide.is-capture {
   --guide-color: #ffffff;
-  border-color: #fff;
-  box-shadow:
-    0 0 0 3px rgba(255, 255, 255, 0.28),
-    0 0 34px rgba(255, 255, 255, 0.9);
 }
 
-.corner {
-  position: absolute;
-  width: 36px;
-  height: 36px;
-  border-color: var(--guide-color);
-  border-style: solid;
-  transition: border-color 140ms ease;
-}
-
-.corner.top-left {
-  top: -5px;
-  left: -5px;
-  border-width: 6px 0 0 6px;
-  border-radius: 17px 0 0;
-}
-
-.corner.top-right {
-  top: -5px;
-  right: -5px;
-  border-width: 6px 6px 0 0;
-  border-radius: 0 17px 0 0;
-}
-
-.corner.bottom-left {
-  bottom: -5px;
-  left: -5px;
-  border-width: 0 0 6px 6px;
-  border-radius: 0 0 0 17px;
-}
-
-.corner.bottom-right {
-  right: -5px;
-  bottom: -5px;
-  border-width: 0 6px 6px 0;
-  border-radius: 0 0 17px;
+.id-guide.is-capture .guide-outline {
+  filter: drop-shadow(0 0 4px rgba(255, 255, 255, 0.92))
+    drop-shadow(0 0 18px rgba(255, 255, 255, 0.9));
 }
 
 .countdown {

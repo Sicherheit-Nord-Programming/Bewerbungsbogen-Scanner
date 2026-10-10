@@ -20,7 +20,7 @@ import {
   portraitCaptureLayout,
   scannerDocumentsForVersion,
   updateHoldState,
-} from './scanner-core.js?v=20261010-document-preview-v14';
+} from './scanner-core.js?v=20261010-perspective-guide-v15';
 import {
   callRelayWithRecovery,
   createPhoneSession,
@@ -32,7 +32,7 @@ import {
   RelayError,
   uploadChunksConcurrently,
   waitForStaticSession,
-} from './relay-client.js?v=20261010-document-preview-v14';
+} from './relay-client.js?v=20261010-perspective-guide-v15';
 
 const MAX_FINALIZE_ATTEMPTS = 5;
 const LIVE_ANALYSIS_INTERVAL_MS = 145;
@@ -772,7 +772,7 @@ function beginAnalysis() {
   applyProfileVisuals();
   setCameraMessage(
     activeProfile().instruction,
-    'Oberkante nach rechts. Der Rahmen wird bei passender Position grün.',
+    'Oberkante nach rechts · leicht schräg gegen Spiegelung halten.',
   );
   const generation = analysisGeneration;
   const loop = (timestamp) => {
@@ -817,7 +817,7 @@ function beginAnalysis() {
         } else {
           elements.sideLabel.textContent = sideTitle();
           elements.cameraStatus.textContent =
-            'Der Rahmen wird grün, sobald der Ausweis richtig liegt.';
+            'Ausweis in den Rahmen halten – leichtes Neigen gegen Spiegelung ist möglich.';
           elements.countdown.textContent = '';
         }
         // `updateHoldState` keeps a short grace window for one noisy camera

@@ -391,46 +391,91 @@ function clamp(value, minimum, maximum) {
   return Math.max(minimum, Math.min(maximum, value));
 }
 
-function searchVerticalEdge(gray, expectedX, tolerance, top, bottom) {
-  const start = clamp(Math.floor(expectedX - tolerance), 2, gray.width - 3);
-  const end = clamp(Math.ceil(expectedX + tolerance), 2, gray.width - 3);
-  const yStart = clamp(Math.floor(top), 1, gray.height - 2);
-  const yEnd = clamp(Math.ceil(bottom), yStart + 1, gray.height - 1);
-  let best = { position: expectedX, score: 0, coverage: 0 };
-
-  for (let x = start; x <= end; x += 1) {
-    let energy = 0;
-    let covered = 0;
-    let samples = 0;
-    for (let y = yStart; y < yEnd; y += 2) {
-      const index = y * gray.width + x;
-      const gradient = Math.abs(gray.data[index + 1] - gray.data[index - 1]);
-      energy += gradient;
-      if (gradient >= 14) covered += 1;
-      samples += 1;
-    }
-    const coverage = covered / Math.max(1, samples);
-    const score = energy / Math.max(1, samples) + coverage * 18;
-    if (score > best.score) best = { position: x, score, coverage };
-  }
-  return best;
+function rotatePoint(point, center, radians) {
+  if (radians === 0) return point;
+  const cosine = Math.cos(radians);
+  const sine = Math.sin(radians);
+  const x = point.x - center.x;
+  const y = point.y - center.y;
+  return {
+    x: center.x + x * cosine - y * sine,
+    y: center.y + x * sine + y * cosine,
+  };
 }
 
-function searchHorizontalEdge(gray, expectedY, tolerance, left, right) {
-  const start = clamp(Math.floor(expectedY - tolerance), 2, gray.height - 3);
-  const end = clamp(Math.ceil(expectedY + tolerance), 2, gray.height - 3);
-  const xStart = clamp(Math.floor(left), 1, gray.width - 2);
-  const xEnd = clamp(Math.ceil(right), xStart + 1, gray.width - 1);
-  let best = { position: expectedY, score: 0, coverage: 0 };
+function perspectiveGuideQuad(guide, topInsetFraction, rollDegrees) {
+  const topInset = guide.width * topInsetFraction;
+  const center = {
+    x: guide.x + guide.width / 2,
+    y: guide.y + guide.height / 2,
+  };
+  const radians = (rollDegrees * Math.PI) / 180;
+  return {
+    topLeft: rotatePoint(
+      { x: guide.x + topInset, y: guide.y },
+      center,
+      radians,
+    ),
+    topRight: rotatePoint(
+      { x: guide.x + guide.width - topInset, y: guide.y },
+      center,
+      radians,
+    ),
+    bottomRight: rotatePoint(
+      { x: guide.x + guide.width, y: guide.y + guide.height },
+      center,
+      radians,
+    ),
+    bottomLeft: rotatePoint(
+      { x: guide.x, y: guide.y + guide.height },
+      center,
+      radians,
+    ),
+  };
+}
 
-  for (let y = start; y <= end; y += 1) {
+function searchSegmentEdge(gray, start, end, normalTolerance) {
+  const deltaX = end.x - start.x;
+  const deltaY = end.y - start.y;
+  const length = Math.hypot(deltaX, deltaY);
+  if (length < 4) return { offset: 0, score: 0, coverage: 0 };
+  const normalX = -deltaY / length;
+  const normalY = deltaX / length;
+  const sampleCount = Math.max(12, Math.floor(length / 2));
+  const offsetStep = Math.max(1, Math.floor(normalTolerance / 18));
+  let best = { offset: 0, score: 0, coverage: 0 };
+
+  for (
+    let offset = -normalTolerance;
+    offset <= normalTolerance;
+    offset += offsetStep
+  ) {
     let energy = 0;
     let covered = 0;
     let samples = 0;
-    for (let x = xStart; x < xEnd; x += 2) {
-      const index = y * gray.width + x;
+    for (let sample = 1; sample < sampleCount; sample += 1) {
+      const progress = sample / sampleCount;
+      const x = start.x + deltaX * progress + normalX * offset;
+      const y = start.y + deltaY * progress + normalY * offset;
+      const beforeX = Math.round(x - normalX * 1.5);
+      const beforeY = Math.round(y - normalY * 1.5);
+      const afterX = Math.round(x + normalX * 1.5);
+      const afterY = Math.round(y + normalY * 1.5);
+      if (
+        beforeX < 0 ||
+        beforeX >= gray.width ||
+        afterX < 0 ||
+        afterX >= gray.width ||
+        beforeY < 0 ||
+        beforeY >= gray.height ||
+        afterY < 0 ||
+        afterY >= gray.height
+      ) {
+        continue;
+      }
       const gradient = Math.abs(
-        gray.data[index + gray.width] - gray.data[index - gray.width],
+        gray.data[afterY * gray.width + afterX] -
+          gray.data[beforeY * gray.width + beforeX],
       );
       energy += gradient;
       if (gradient >= 14) covered += 1;
@@ -438,7 +483,7 @@ function searchHorizontalEdge(gray, expectedY, tolerance, left, right) {
     }
     const coverage = covered / Math.max(1, samples);
     const score = energy / Math.max(1, samples) + coverage * 18;
-    if (score > best.score) best = { position: y, score, coverage };
+    if (score > best.score) best = { offset, score, coverage };
   }
   return best;
 }
@@ -482,8 +527,9 @@ function interiorDetail(gray, box) {
 
 /**
  * Lightweight, deliberately tolerant document positioning. It looks for long
- * card edges close to the visual ID-1 guide. Requiring only three confident
- * edges avoids punishing rounded corners, shadows and ordinary hand jitter.
+ * card edges close to straight and mildly perspective guide candidates.
+ * Requiring only three confident edges avoids punishing rounded corners,
+ * reflections, shadows and ordinary hand jitter.
  */
 export function analyzeFramePosition(image, guideRect) {
   assertImageShape(image);
@@ -497,7 +543,10 @@ export function analyzeFramePosition(image, guideRect) {
     throw new TypeError('Der Ausweisrahmen ist ungültig.');
   }
 
-  const gray = grayscaleGrid(image, 480);
+  // Positioning only needs edge geometry. A compact analysis grid keeps the
+  // repeated live check responsive on older applicant phones while the final
+  // scan still uses the camera's full resolution.
+  const gray = grayscaleGrid(image, 360);
   const guide = normalizedRect(
     guideRect,
     image.width,
@@ -505,46 +554,71 @@ export function analyzeFramePosition(image, guideRect) {
     gray.width,
     gray.height,
   );
-  const verticalTolerance = guide.width * 0.2;
-  const horizontalTolerance = guide.height * 0.22;
-  const verticalTop = guide.y + guide.height * 0.17;
-  const verticalBottom = guide.y + guide.height * 0.83;
-  const horizontalLeft = guide.x + guide.width * 0.14;
-  const horizontalRight = guide.x + guide.width * 0.86;
-
-  const edges = {
-    left: searchVerticalEdge(
-      gray,
-      guide.x,
-      verticalTolerance,
-      verticalTop,
-      verticalBottom,
-    ),
-    right: searchVerticalEdge(
-      gray,
-      guide.x + guide.width,
-      verticalTolerance,
-      verticalTop,
-      verticalBottom,
-    ),
-    top: searchHorizontalEdge(
-      gray,
-      guide.y,
-      horizontalTolerance,
-      horizontalLeft,
-      horizontalRight,
-    ),
-    bottom: searchHorizontalEdge(
-      gray,
-      guide.y + guide.height,
-      horizontalTolerance,
-      horizontalLeft,
-      horizontalRight,
-    ),
-  };
-
   const edgeIsStrong = (edge) => edge.score >= 7 && edge.coverage >= 0.06;
-  const strongEdges = Object.values(edges).filter(edgeIsStrong).length;
+  // Try the visible guide and the common straight placement first. Most live
+  // frames therefore finish after one or two inexpensive hypotheses. The
+  // remaining bounded candidates cover pronounced perspective and up to six
+  // degrees of sideways roll without blocking the phone's main UI thread.
+  const perspectiveCandidates = [
+    [0.06, 0],
+    [0, 0],
+    [0.1, 0],
+    [0.14, 0],
+    [-0.04, 0],
+    [0.06, -6],
+    [0.06, 6],
+    [0, -6],
+    [0, 6],
+    [0.1, -6],
+    [0.1, 6],
+    [0.14, -6],
+    [0.14, 6],
+    [-0.04, -6],
+    [-0.04, 6],
+  ];
+  let bestMatch = { strongEdges: 0, score: 0 };
+  for (const [topInset, roll] of perspectiveCandidates) {
+    const quad = perspectiveGuideQuad(guide, topInset, roll);
+    const edges = {
+      left: searchSegmentEdge(
+        gray,
+        quad.topLeft,
+        quad.bottomLeft,
+        guide.width * 0.2,
+      ),
+      right: searchSegmentEdge(
+        gray,
+        quad.topRight,
+        quad.bottomRight,
+        guide.width * 0.2,
+      ),
+      top: searchSegmentEdge(
+        gray,
+        quad.topLeft,
+        quad.topRight,
+        guide.height * 0.22,
+      ),
+      bottom: searchSegmentEdge(
+        gray,
+        quad.bottomLeft,
+        quad.bottomRight,
+        guide.height * 0.22,
+      ),
+    };
+    const strongEdges = Object.values(edges).filter(edgeIsStrong).length;
+    const score = Object.values(edges).reduce(
+      (total, edge) => total + edge.score,
+      0,
+    );
+    if (
+      strongEdges > bestMatch.strongEdges ||
+      (strongEdges === bestMatch.strongEdges && score > bestMatch.score)
+    ) {
+      bestMatch = { strongEdges, score };
+    }
+    if (strongEdges === 4) break;
+  }
+  const strongEdges = bestMatch.strongEdges;
   // The final photo is cropped to the visible guide, not to this lightweight
   // edge estimate. Printed lines and holograms can otherwise be mistaken for
   // a card boundary and make an already well-positioned ID appear to jump.
