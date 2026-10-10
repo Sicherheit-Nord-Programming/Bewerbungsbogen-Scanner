@@ -267,6 +267,31 @@ button {
   box-shadow: 0 4px 14px rgba(18, 34, 61, 0.08);
   font-weight: 800;
   cursor: pointer;
+  transition:
+    scale 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    translate 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    filter 140ms ease,
+    box-shadow 160ms ease;
+}
+
+.document-preview-back,
+.image-preview-close {
+  transition:
+    scale 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    translate 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    filter 140ms ease;
+}
+
+.document-preview-thumbnail:active,
+.document-preview-thumbnail.is-pressing,
+.document-preview-back:active,
+.document-preview-back.is-pressing,
+.image-preview-close:active,
+.image-preview-close.is-pressing {
+  scale: 0.975;
+  translate: 0 1px;
+  filter: brightness(0.96);
+  transition-duration: 70ms;
 }
 
 .document-preview-thumbnail:only-child {
