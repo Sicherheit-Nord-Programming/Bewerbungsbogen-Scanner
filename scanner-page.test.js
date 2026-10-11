@@ -13,11 +13,11 @@ test('standalone page contains a live camera guide without external code', async
   assert.match(html, /<video[^>]+autoplay[^>]+muted[^>]+playsinline/);
   assert.match(html, /id="id-guide"/);
   assert.match(html, /class="guide-outline"/);
-  assert.match(html, /points="6,1 94,1 99\.5,99 0\.5,99"/);
+  assert.equal((html.match(/points="5,2 95,2 99,98 1,98"/g) ?? []).length, 2);
   assert.doesNotMatch(html, /class="corner /);
   assert.match(html, /id="countdown"/);
-  assert.match(html, /scanner\.js\?v=20261010-tax-id-start-v16/);
-  assert.match(html, /styles\.css\?v=20261010-tax-id-start-v16/);
+  assert.match(html, /scanner\.js\?v=20261011-landscape-guide-v17/);
+  assert.match(html, /styles\.css\?v=20261011-landscape-guide-v17/);
   assert.match(html, /<title>Sicherheit Nord · Ausweisscan<\/title>/);
   assert.match(
     html,
@@ -26,6 +26,10 @@ test('standalone page contains a live camera guide without external code', async
   assert.match(html, /<meta name="referrer" content="no-referrer" \/>/);
   assert.match(html, /legacy-redirect\.js\?v=20261010-tax-id-start-v16/);
   assert.match(html, /class="guide-orientation">OBERKANTE</);
+  assert.match(
+    html,
+    /class="guide-angle-hint"[\s\S]{0,100}Handy leicht zum Körper neigen/,
+  );
   assert.match(html, /Vorderseite Personalausweis/);
   assert.match(html, /sicherheit-nord-logo\.png/);
   assert.match(html, /id="dashboard"/);
@@ -108,8 +112,8 @@ test('standalone page contains a live camera guide without external code', async
   assert.match(html, /script-src 'self'/);
   assert.doesNotMatch(html, /<script[^>]+src="https:/);
   assert.match(script, /navigator\.mediaDevices\.getUserMedia/);
-  assert.match(script, /Oberkante nach rechts/);
-  assert.doesNotMatch(script, /Oberkante nach links/);
+  assert.match(script, /Oberkante oben\. Handy leicht zum Körper neigen\./);
+  assert.doesNotMatch(script, /Oberkante nach rechts|Oberkante nach links/);
   assert.match(script, /facingMode: \{ ideal: 'environment' \}/);
   assert.doesNotMatch(script, /\bzoom\b/i);
   assert.match(script, /resizeMode = \{ ideal: 'none' \}/);
@@ -125,12 +129,13 @@ test('standalone page contains a live camera guide without external code', async
   assert.match(script, /triggerCaptureFeedback\(\)/);
   assert.match(script, /const still = captureVideoFrame\(\)/);
   assert.match(script, /guideCropInSource\(/);
+  assert.match(script, /portraitGuide \? 'portrait' : 'landscape'/);
+  assert.doesNotMatch(script, /mapBoxToSource/);
   assert.match(
     script,
-    /const crop = normalizedIdCrop\([\s\S]+?0,[\s\S]+?'portrait'/,
+    /if \(portraitGuide\)[\s\S]+?drawPortraitCropAsLandscape/,
   );
-  assert.doesNotMatch(script, /mapBoxToSource/);
-  assert.match(script, /normalizedIdCrop\([\s\S]+?'portrait'/);
+  assert.match(script, /else \{[\s\S]+?context\.drawImage\(/);
   assert.match(script, /drawPortraitCropAsLandscape\(/);
   assert.match(script, /VIDEO_FALLBACK_OUTPUT_LONG_EDGE = 1_600/);
   assert.match(script, /minimumSharpness: VIDEO_FALLBACK_MIN_SHARPNESS/);
@@ -142,8 +147,8 @@ test('standalone page contains a live camera guide without external code', async
   );
   assert.match(script, /prepareEncryptedCapture/);
   assert.match(script, /protocolVersion,/);
-  assert.match(script, /scanner-core\.js\?v=20261010-tax-id-start-v16/);
-  assert.match(script, /relay-client\.js\?v=20261010-tax-id-start-v16/);
+  assert.match(script, /scanner-core\.js\?v=20261011-landscape-guide-v17/);
+  assert.match(script, /relay-client\.js\?v=20261011-landscape-guide-v17/);
   assert.match(script, /callRelayWithRecovery\(/);
   assert.match(script, /'claim'[\s\S]+?shouldContinue: \(\) => !sessionClosed/);
   assert.match(script, /elements\.documentFinish\.hidden = false/);
@@ -315,7 +320,7 @@ test('standalone page contains a live camera guide without external code', async
   assert.match(script, /pagehide/);
   assert.match(
     styles,
-    /\.id-guide\s*\{[\s\S]*?aspect-ratio:\s*53\.98\s*\/\s*85\.6/,
+    /\.id-guide\s*\{[\s\S]*?aspect-ratio:\s*85\.6\s*\/\s*53\.98/,
   );
   assert.match(
     styles,
@@ -325,6 +330,16 @@ test('standalone page contains a live camera guide without external code', async
     styles,
     /\.guide-outline-color\s*\{[\s\S]*?stroke:\s*var\(--guide-color\)/,
   );
+  assert.match(
+    styles,
+    /\.id-guide\.is-introducing \.guide-outline\s*\{[\s\S]*?animation:\s*guide-introduction/,
+  );
+  assert.match(
+    styles,
+    /\.id-guide\.is-introducing \.guide-angle-hint\s*\{[\s\S]*?animation:\s*guide-hint/,
+  );
+  assert.match(script, /function playGuideIntroduction\(\)/);
+  assert.match(script, /playGuideIntroduction\(\);/);
   assert.match(styles, /\.document-status\.is-in-progress/);
   assert.match(styles, /\.document-card\.is-selected/);
   assert.match(styles, /\.document-preview-grid\s*\{[\s\S]+?repeat\(2,/);
@@ -371,34 +386,45 @@ test('standalone page contains a live camera guide without external code', async
   assert.doesNotMatch(startCameraRule, /top:\s*62%/);
   const guideRule = styles.match(/\.id-guide\s*\{([\s\S]*?)\}/)?.[1];
   assert.ok(guideRule);
-  assert.match(guideRule, /width:\s*min\(75vw,\s*44dvh,\s*300px\)/);
-  assert.doesNotMatch(guideRule, /88vw|430px/);
+  assert.match(guideRule, /width:\s*min\(88vw,\s*54dvh,\s*430px\)/);
+  assert.doesNotMatch(guideRule, /75vw|300px/);
   const orientationRule = styles.match(
     /\.guide-orientation\s*\{([\s\S]*?)\}/,
   )?.[1];
   assert.ok(orientationRule);
-  assert.match(orientationRule, /right:\s*0/);
-  assert.match(orientationRule, /rotate\(90deg\)/);
-  assert.doesNotMatch(orientationRule, /left:\s*0/);
+  assert.match(orientationRule, /top:\s*0/);
+  assert.match(orientationRule, /left:\s*50%/);
+  assert.match(orientationRule, /translate\(-50%,\s*-50%\)/);
+  assert.doesNotMatch(orientationRule, /right:\s*0|rotate\(90deg\)/);
   const previewRule = styles.match(/#preview\s*\{([\s\S]*?)\}/)?.[1];
   assert.ok(previewRule);
-  assert.match(previewRule, /width:\s*158\.58%/);
-  assert.match(previewRule, /rotate\(90deg\)/);
+  assert.match(previewRule, /width:\s*100%/);
+  assert.match(previewRule, /height:\s*100%/);
+  assert.match(previewRule, /object-fit:\s*cover/);
+  assert.doesNotMatch(previewRule, /rotate\(90deg\)/);
+  assert.match(
+    styles,
+    /\.preview-frame\.is-passport #preview\s*\{[\s\S]*?rotate\(90deg\)/,
+  );
   const previewFrameRule = styles.match(
     /\.preview-frame\s*\{([\s\S]*?)\}/,
   )?.[1];
   assert.ok(previewFrameRule);
   assert.doesNotMatch(previewFrameRule, /border:\s*3px/);
-  assert.match(previewFrameRule, /width:\s*min\(75vw,\s*44vh,\s*300px\)/);
-  assert.match(previewFrameRule, /width:\s*min\(75vw,\s*44dvh,\s*300px\)/);
-  assert.match(previewFrameRule, /aspect-ratio:\s*53\.98\s*\/\s*85\.6/);
+  assert.match(previewFrameRule, /width:\s*min\(88vw,\s*54vh,\s*430px\)/);
+  assert.match(previewFrameRule, /width:\s*min\(88vw,\s*54dvh,\s*430px\)/);
+  assert.match(previewFrameRule, /aspect-ratio:\s*85\.6\s*\/\s*53\.98/);
   assert.match(
     styles,
     /\.preview-frame::after\s*\{[\s\S]+?inset:\s*0[\s\S]+?border:\s*3px solid #24d28c/,
   );
   assert.match(
     styles,
-    /@media \(orientation: landscape\)[\s\S]+?\.id-guide,\s*\.preview-frame\s*\{[\s\S]+?width:\s*min\(44dvh,\s*260px\)/,
+    /@media \(orientation: landscape\)[\s\S]+?\.id-guide,\s*\.preview-frame\s*\{[\s\S]+?width:\s*min\(74vw,\s*70dvh,\s*380px\)/,
+  );
+  assert.match(
+    styles,
+    /@media \(prefers-reduced-motion: reduce\)[\s\S]+?\.id-guide\.is-introducing \.guide-outline\s*\{[\s\S]+?animation:\s*none !important/,
   );
 });
 
@@ -443,11 +469,11 @@ test('a dashboard return detaches an in-flight camera request from the next docu
   const source = await readFile(scannerUrl, 'utf8');
   const instrumentedSource = source
     .replace(
-      "from './scanner-core.js?v=20261010-tax-id-start-v16';",
+      "from './scanner-core.js?v=20261011-landscape-guide-v17';",
       `from ${JSON.stringify(scannerCoreUrl)};`,
     )
     .replace(
-      "from './relay-client.js?v=20261010-tax-id-start-v16';",
+      "from './relay-client.js?v=20261011-landscape-guide-v17';",
       `from ${JSON.stringify(relayClientUrl)};`,
     )
     .replace(

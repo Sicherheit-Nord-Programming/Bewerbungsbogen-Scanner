@@ -20,7 +20,7 @@ import {
   portraitCaptureLayout,
   scannerDocumentsForVersion,
   updateHoldState,
-} from './scanner-core.js?v=20261010-tax-id-start-v16';
+} from './scanner-core.js?v=20261011-landscape-guide-v17';
 import {
   callRelayWithRecovery,
   createPhoneSession,
@@ -32,7 +32,7 @@ import {
   RelayError,
   uploadChunksConcurrently,
   waitForStaticSession,
-} from './relay-client.js?v=20261010-tax-id-start-v16';
+} from './relay-client.js?v=20261011-landscape-guide-v17';
 
 const MAX_FINALIZE_ATTEMPTS = 5;
 const LIVE_ANALYSIS_INTERVAL_MS = 145;
@@ -143,6 +143,7 @@ let pendingConfirm = false;
 let busy = false;
 let expiryTimer = 0;
 let captureFeedbackTimer = 0;
+let guideIntroductionTimer = 0;
 let documentOpenPending = false;
 let activeViewAnimation = null;
 let activeViewAnimationTarget = null;
@@ -153,22 +154,22 @@ const SLOT_PROFILES = Object.freeze({
   front: {
     title: 'Vorderseite Personalausweis',
     aspectRatio: ID_CARD_ASPECT_RATIO,
-    instruction: 'Ausweis hochkant in den Rahmen halten.',
+    instruction: 'Ausweis quer in den Rahmen halten.',
   },
   back: {
     title: 'Rückseite Personalausweis',
     aspectRatio: ID_CARD_ASPECT_RATIO,
-    instruction: 'Ausweis hochkant in den Rahmen halten.',
+    instruction: 'Ausweis quer in den Rahmen halten.',
   },
   'id-front': {
     title: 'Vorderseite Personalausweis',
     aspectRatio: ID_CARD_ASPECT_RATIO,
-    instruction: 'Personalausweis hochkant in den Rahmen halten.',
+    instruction: 'Personalausweis quer in den Rahmen halten.',
   },
   'id-back': {
     title: 'Rückseite Personalausweis',
     aspectRatio: ID_CARD_ASPECT_RATIO,
-    instruction: 'Personalausweis hochkant in den Rahmen halten.',
+    instruction: 'Personalausweis quer in den Rahmen halten.',
   },
   'passport-data': {
     title: 'Datenseite Reisepass',
@@ -178,12 +179,12 @@ const SLOT_PROFILES = Object.freeze({
   'health-front': {
     title: 'Vorderseite Krankenkassenkarte',
     aspectRatio: ID_CARD_ASPECT_RATIO,
-    instruction: 'Krankenkassenkarte hochkant in den Rahmen halten.',
+    instruction: 'Krankenkassenkarte quer in den Rahmen halten.',
   },
   'health-back': {
     title: 'Rückseite Krankenkassenkarte',
     aspectRatio: ID_CARD_ASPECT_RATIO,
-    instruction: 'Krankenkassenkarte hochkant in den Rahmen halten.',
+    instruction: 'Krankenkassenkarte quer in den Rahmen halten.',
   },
   'tax-id': {
     title: 'Steueridentifikationsnummer',
@@ -226,6 +227,22 @@ function setGuide(valid) {
   elements.idGuide.classList.remove('is-capture');
   elements.idGuide.classList.toggle('is-green', valid);
   elements.idGuide.classList.toggle('is-red', !valid);
+}
+
+function stopGuideIntroduction() {
+  window.clearTimeout(guideIntroductionTimer);
+  guideIntroductionTimer = 0;
+  elements.idGuide.classList.remove('is-introducing');
+}
+
+function playGuideIntroduction() {
+  stopGuideIntroduction();
+  // Restart the short demonstration whenever a document camera opens. The
+  // fixed guide element itself never moves, so detection and cropping retain
+  // exactly the same geometry while only its visual outline animates.
+  void elements.idGuide.offsetWidth;
+  elements.idGuide.classList.add('is-introducing');
+  guideIntroductionTimer = window.setTimeout(stopGuideIntroduction, 2600);
 }
 
 function setProgress(percent) {
@@ -417,6 +434,7 @@ function releaseCameraStream(stream, request) {
 
 function stopCamera() {
   stopAnalysis();
+  stopGuideIntroduction();
   cameraGeneration += 1;
   cameraRequest = null;
   const stream = mediaStream;
@@ -686,10 +704,11 @@ async function requestCamera() {
         return false;
       }
       applyProfileVisuals();
+      playGuideIntroduction();
       setCameraMessage(
         activeProfile().instruction,
         sessionClaimed
-          ? 'Oberkante nach rechts. Der Rahmen wird bei passender Position grün.'
+          ? 'Oberkante oben. Handy leicht zum Körper neigen.'
           : 'Sichere Sitzung wird vorbereitet …',
       );
       if (sessionClaimed) beginAnalysis();
@@ -772,7 +791,7 @@ function beginAnalysis() {
   applyProfileVisuals();
   setCameraMessage(
     activeProfile().instruction,
-    'Oberkante nach rechts · leicht schräg gegen Spiegelung halten.',
+    'Oberkante oben · Handy leicht zum Körper neigen.',
   );
   const generation = analysisGeneration;
   const loop = (timestamp) => {
@@ -816,8 +835,7 @@ function beginAnalysis() {
           elements.countdown.textContent = holdState.countdown || '';
         } else {
           elements.sideLabel.textContent = sideTitle();
-          elements.cameraStatus.textContent =
-            'Ausweis in den Rahmen halten – leichtes Neigen gegen Spiegelung ist möglich.';
+          elements.cameraStatus.textContent = `${activeProfile().instruction} Handy leicht zum Körper neigen.`;
           elements.countdown.textContent = '';
         }
         // `updateHoldState` keeps a short grace window for one noisy camera
@@ -1056,34 +1074,58 @@ async function produceCapture() {
       stageRect.width,
       stageRect.height,
     );
+    const portraitGuide = activeProfile().aspectRatio === PASSPORT_ASPECT_RATIO;
     const crop = normalizedIdCrop(
       sourceBox,
       still.width,
       still.height,
       0,
-      'portrait',
+      portraitGuide ? 'portrait' : 'landscape',
       activeProfile().aspectRatio,
     );
-    const nativeLayout = portraitCaptureLayout(
-      crop,
-      MAX_CAPTURE_LONG_EDGE,
-      activeProfile().aspectRatio,
-    );
+    const nativeLayout = portraitGuide
+      ? portraitCaptureLayout(
+          crop,
+          MAX_CAPTURE_LONG_EDGE,
+          activeProfile().aspectRatio,
+        )
+      : {
+          width: Math.max(
+            1,
+            Math.floor(Math.min(MAX_CAPTURE_LONG_EDGE, crop.width)),
+          ),
+        };
     const nativeWidth = nativeLayout.width;
-    const nativeHeight = nativeLayout.height;
+    const nativeHeight = portraitGuide
+      ? nativeLayout.height
+      : Math.max(1, Math.floor(nativeWidth / activeProfile().aspectRatio));
     canvas.width = nativeWidth;
     canvas.height = nativeHeight;
     let context = canvas.getContext('2d', {
       alpha: false,
       willReadFrequently: true,
     });
-    drawPortraitCropAsLandscape(
-      context,
-      still.source,
-      crop,
-      nativeWidth,
-      nativeHeight,
-    );
+    if (portraitGuide) {
+      drawPortraitCropAsLandscape(
+        context,
+        still.source,
+        crop,
+        nativeWidth,
+        nativeHeight,
+      );
+    } else {
+      context.drawImage(
+        still.source,
+        crop.x,
+        crop.y,
+        crop.width,
+        crop.height,
+        0,
+        0,
+        nativeWidth,
+        nativeHeight,
+      );
+    }
     image = context.getImageData(0, 0, nativeWidth, nativeHeight);
     const nativeQuality = analyzeCaptureQuality(
       image,

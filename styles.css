@@ -591,14 +591,14 @@ button {
 }
 
 .id-guide {
-  --guide-color: #f04450;
+  --guide-color: #e5484d;
   position: absolute;
   z-index: 3;
   left: 50%;
-  top: 45%;
-  width: min(75vw, 44vh, 300px);
-  width: min(75vw, 44dvh, 300px);
-  aspect-ratio: 53.98 / 85.6;
+  top: 44%;
+  width: min(88vw, 54vh, 430px);
+  width: min(88vw, 54dvh, 430px);
+  aspect-ratio: 85.6 / 53.98;
   transform: translate(-50%, -50%);
   pointer-events: none;
 }
@@ -609,33 +609,35 @@ button {
   width: 100%;
   height: 100%;
   overflow: visible;
-  filter: drop-shadow(
-    0 0 12px color-mix(in srgb, var(--guide-color) 42%, transparent)
-  );
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.38));
+  transform-origin: center;
 }
 
 .guide-outline polygon {
   fill: none;
+  stroke-linecap: round;
   stroke-linejoin: round;
 }
 
 .guide-outline-halo {
-  stroke: rgba(0, 0, 0, 0.62);
-  stroke-width: 8px;
+  stroke: rgba(3, 8, 12, 0.68);
+  stroke-width: 5px;
 }
 
 .guide-outline-color {
   stroke: var(--guide-color);
-  stroke-width: 4px;
+  stroke-width: 2.5px;
   transition: stroke 140ms ease;
 }
 
 .id-guide.is-green {
-  --guide-color: #24d28c;
+  --guide-color: #22ad73;
 }
 
 .id-guide.is-passport,
 .preview-frame.is-passport {
+  width: min(75vw, 44vh, 300px);
+  width: min(75vw, 44dvh, 300px);
   aspect-ratio: 88 / 125;
 }
 
@@ -648,17 +650,86 @@ button {
 
 .guide-orientation {
   position: absolute;
-  top: 50%;
-  right: 0;
-  padding: 5px 9px;
-  transform: translate(50%, -50%) rotate(90deg);
-  border-radius: 999px;
+  top: 0;
+  left: 50%;
+  padding: 4px 7px;
+  transform: translate(-50%, -50%);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 7px;
   color: #fff;
-  background: rgba(0, 0, 0, 0.68);
-  font-size: 0.69rem;
-  font-weight: 850;
-  letter-spacing: 0.065em;
+  background: rgba(4, 10, 15, 0.58);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  font-size: 0.64rem;
+  font-weight: 720;
+  letter-spacing: 0.1em;
   white-space: nowrap;
+  backdrop-filter: blur(6px);
+}
+
+.guide-angle-hint {
+  position: absolute;
+  top: calc(100% + 16px);
+  left: 50%;
+  width: max-content;
+  max-width: min(82vw, 340px);
+  padding: 8px 12px;
+  transform: translateX(-50%);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 10px;
+  opacity: 0;
+  color: #fff;
+  background: rgba(4, 10, 15, 0.66);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+  font-size: 0.84rem;
+  font-weight: 650;
+  line-height: 1.3;
+  text-align: center;
+  text-wrap: balance;
+  backdrop-filter: blur(8px);
+}
+
+.id-guide.is-introducing .guide-outline {
+  animation: guide-introduction 850ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.id-guide.is-introducing .guide-angle-hint {
+  animation: guide-hint 2400ms ease both;
+}
+
+@keyframes guide-introduction {
+  0% {
+    opacity: 0.5;
+    transform: scaleX(0.82) scaleY(0.96);
+  }
+
+  68% {
+    opacity: 1;
+    transform: scaleX(1.015) scaleY(0.995);
+  }
+
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes guide-hint {
+  0%,
+  8% {
+    opacity: 0;
+    transform: translate(-50%, 5px);
+  }
+
+  18%,
+  76% {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -3px);
+  }
 }
 
 .id-guide.is-capture {
@@ -674,7 +745,7 @@ button {
   position: absolute;
   z-index: 5;
   left: 50%;
-  top: 45%;
+  top: 44%;
   transform: translate(-50%, -50%);
   min-width: 84px;
   text-align: center;
@@ -827,9 +898,9 @@ button {
 
 .preview-frame {
   position: relative;
-  width: min(75vw, 44vh, 300px);
-  width: min(75vw, 44dvh, 300px);
-  aspect-ratio: 53.98 / 85.6;
+  width: min(88vw, 54vh, 430px);
+  width: min(88vw, 54dvh, 430px);
+  aspect-ratio: 85.6 / 53.98;
   margin: 0 auto;
   overflow: hidden;
   border-radius: 17px;
@@ -847,18 +918,21 @@ button {
 }
 
 #preview {
-  position: absolute;
-  top: 50%;
-  left: 50%;
   display: block;
-  width: 158.58%;
-  max-width: none;
-  height: auto;
-  transform: translate(-50%, -50%) rotate(90deg);
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .preview-frame.is-passport #preview {
+  position: absolute;
+  top: 50%;
+  left: 50%;
   width: 142.05%;
+  max-width: none;
+  height: auto;
+  object-fit: initial;
+  transform: translate(-50%, -50%) rotate(90deg);
 }
 
 .preview-frame.is-tax-id #preview {
@@ -932,8 +1006,8 @@ button {
 
   .id-guide,
   .preview-frame {
-    width: min(44vh, 260px);
-    width: min(44dvh, 260px);
+    width: min(74vw, 70vh, 380px);
+    width: min(74vw, 70dvh, 380px);
   }
 
   .countdown {
@@ -978,5 +1052,14 @@ button {
     scroll-behavior: auto !important;
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
+  }
+
+  .id-guide.is-introducing .guide-outline {
+    animation: none !important;
+  }
+
+  .id-guide.is-introducing .guide-angle-hint {
+    animation: none !important;
+    opacity: 1;
   }
 }
