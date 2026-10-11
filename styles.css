@@ -1,7 +1,11 @@
 :root {
   color-scheme: dark;
   font-family:
-    system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    sans-serif;
   color: #fff;
   background: #05090d;
   -webkit-tap-highlight-color: transparent;
@@ -595,10 +599,10 @@ button {
   position: absolute;
   z-index: 3;
   left: 50%;
-  top: 44%;
-  width: min(82vw, 56vh, 360px);
-  width: min(82vw, 56dvh, 360px);
-  aspect-ratio: 53.98 / 85.6;
+  top: 49%;
+  width: min(94vw, 116vh, 720px);
+  width: min(94vw, 116dvh, 720px);
+  aspect-ratio: 85.6 / 53.98;
   transform: translate(-50%, -50%);
   pointer-events: none;
 }
@@ -650,11 +654,11 @@ button {
 
 .guide-orientation {
   position: absolute;
-  top: 50%;
-  right: 0;
-  left: auto;
+  top: 1%;
+  right: auto;
+  left: 50%;
   padding: 4px 7px;
-  transform: translate(50%, -50%) rotate(90deg);
+  transform: translate(-50%, -50%);
   border: 1px solid rgba(255, 255, 255, 0.18);
   border-radius: 7px;
   color: #fff;
@@ -940,8 +944,8 @@ button {
   }
 
   .id-guide {
-    width: min(82vw, 56vh, 360px);
-    width: min(82vw, 56dvh, 360px);
+    width: min(94vw, 116vh, 720px);
+    width: min(94vw, 116dvh, 720px);
   }
 
   .preview-frame {

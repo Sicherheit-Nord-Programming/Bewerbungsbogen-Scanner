@@ -5,10 +5,15 @@ import {
   coverSourceRect,
   createHoldState,
   documentScanStatus,
+  drawPerspectiveQuadAsRectangle,
   drawPortraitCropAsLandscape,
   enhanceScanPixels,
   guideCropInSource,
+  guideQuadInRect,
+  guideQuadInSource,
   ID_CARD_ASPECT_RATIO,
+  ID_CARD_GUIDE_QUAD,
+  ID_CARD_GUIDE_VIEWBOX,
   isPlausibleTaxId,
   nextDocumentSlot,
   nextSelectedPlanStep,
@@ -20,7 +25,7 @@ import {
   portraitCaptureLayout,
   scannerDocumentsForVersion,
   updateHoldState,
-} from './scanner-core.js?v=20261011-rotated-guide-v19';
+} from './scanner-core.js?v=20261012-perspective-guide-v20';
 import {
   callRelayWithRecovery,
   createPhoneSession,
@@ -32,7 +37,7 @@ import {
   RelayError,
   uploadChunksConcurrently,
   waitForStaticSession,
-} from './relay-client.js?v=20261011-rotated-guide-v19';
+} from './relay-client.js?v=20261012-perspective-guide-v20';
 
 const MAX_FINALIZE_ATTEMPTS = 5;
 const LIVE_ANALYSIS_INTERVAL_MS = 145;
@@ -47,6 +52,8 @@ const RELAY_RECOVERY_DELAY_MS = 900;
 const UPLOAD_CONCURRENCY = 4;
 const TAX_ID_PAGE_WIDTH = 1_400;
 const TAX_ID_PAGE_HEIGHT = 1_980;
+const PORTRAIT_GUIDE_VIEW_BOX = '0 0 63 100';
+const PORTRAIT_GUIDE_POINTS = '2,2 61,2 61,98 2,98';
 
 const elements = Object.fromEntries(
   [
@@ -81,6 +88,9 @@ const elements = Object.fromEntries(
     'camera-stage',
     'camera',
     'id-guide',
+    'guide-outline',
+    'guide-outline-halo',
+    'guide-outline-color',
     'countdown',
     'side-label',
     'camera-status',
@@ -153,28 +163,28 @@ const SLOT_PROFILES = Object.freeze({
   front: {
     title: 'Vorderseite Personalausweis',
     aspectRatio: ID_CARD_ASPECT_RATIO,
-    captureOrientation: 'portrait',
-    instruction: 'Handy waagerecht halten. Ausweis hochkant ausrichten.',
+    captureOrientation: 'landscape',
+    instruction: 'Handy waagerecht halten. Ausweis quer in den Rahmen halten.',
   },
   back: {
     title: 'Rückseite Personalausweis',
     aspectRatio: ID_CARD_ASPECT_RATIO,
-    captureOrientation: 'portrait',
-    instruction: 'Handy waagerecht halten. Ausweis hochkant ausrichten.',
+    captureOrientation: 'landscape',
+    instruction: 'Handy waagerecht halten. Ausweis quer in den Rahmen halten.',
   },
   'id-front': {
     title: 'Vorderseite Personalausweis',
     aspectRatio: ID_CARD_ASPECT_RATIO,
-    captureOrientation: 'portrait',
+    captureOrientation: 'landscape',
     instruction:
-      'Handy waagerecht halten. Personalausweis hochkant ausrichten.',
+      'Handy waagerecht halten. Personalausweis quer in den Rahmen halten.',
   },
   'id-back': {
     title: 'Rückseite Personalausweis',
     aspectRatio: ID_CARD_ASPECT_RATIO,
-    captureOrientation: 'portrait',
+    captureOrientation: 'landscape',
     instruction:
-      'Handy waagerecht halten. Personalausweis hochkant ausrichten.',
+      'Handy waagerecht halten. Personalausweis quer in den Rahmen halten.',
   },
   'passport-data': {
     title: 'Datenseite Reisepass',
@@ -185,16 +195,16 @@ const SLOT_PROFILES = Object.freeze({
   'health-front': {
     title: 'Vorderseite Krankenkassenkarte',
     aspectRatio: ID_CARD_ASPECT_RATIO,
-    captureOrientation: 'portrait',
+    captureOrientation: 'landscape',
     instruction:
-      'Handy waagerecht halten. Krankenkassenkarte hochkant ausrichten.',
+      'Handy waagerecht halten. Krankenkassenkarte quer in den Rahmen halten.',
   },
   'health-back': {
     title: 'Rückseite Krankenkassenkarte',
     aspectRatio: ID_CARD_ASPECT_RATIO,
-    captureOrientation: 'portrait',
+    captureOrientation: 'landscape',
     instruction:
-      'Handy waagerecht halten. Krankenkassenkarte hochkant ausrichten.',
+      'Handy waagerecht halten. Krankenkassenkarte quer in den Rahmen halten.',
   },
   'tax-id': {
     title: 'Steueridentifikationsnummer',
@@ -218,12 +228,35 @@ function sideTitle() {
 }
 
 function guideOrientationStatus() {
-  return 'Oberkante nach rechts. Handy waagerecht halten.';
+  return 'Oberkante oben. Handy waagerecht halten.';
+}
+
+function perspectiveCardGuide() {
+  return activeProfile().aspectRatio === ID_CARD_ASPECT_RATIO;
+}
+
+function guideViewBoxValue(viewBox) {
+  return `${viewBox.x} ${viewBox.y} ${viewBox.width} ${viewBox.height}`;
+}
+
+function guidePointsValue(quad) {
+  return [quad.topLeft, quad.topRight, quad.bottomRight, quad.bottomLeft]
+    .map(({ x, y }) => `${x},${y}`)
+    .join(' ');
 }
 
 function applyProfileVisuals() {
   const passport = activeProfile().aspectRatio === PASSPORT_ASPECT_RATIO;
   const taxId = side === 'tax-id';
+  const guideViewBox = passport
+    ? PORTRAIT_GUIDE_VIEW_BOX
+    : guideViewBoxValue(ID_CARD_GUIDE_VIEWBOX);
+  const guidePoints = passport
+    ? PORTRAIT_GUIDE_POINTS
+    : guidePointsValue(ID_CARD_GUIDE_QUAD);
+  elements.guideOutline.setAttribute('viewBox', guideViewBox);
+  elements.guideOutlineHalo.setAttribute('points', guidePoints);
+  elements.guideOutlineColor.setAttribute('points', guidePoints);
   elements.idGuide.classList.toggle('is-passport', passport);
   elements.preview.parentElement.classList.toggle('is-passport', passport);
   elements.preview.parentElement.classList.toggle('is-tax-id', taxId);
@@ -811,7 +844,14 @@ function beginAnalysis() {
           elements.analysisCanvas.width,
           elements.analysisCanvas.height,
         );
-        const observation = analyzeFramePosition(image, frame.guideRect);
+        const exactGuideQuad = perspectiveCardGuide()
+          ? guideQuadInRect(frame.guideRect)
+          : null;
+        const observation = analyzeFramePosition(
+          image,
+          frame.guideRect,
+          exactGuideQuad,
+        );
         image.data.fill(0);
         holdState = updateHoldState(holdState, observation, timestamp, {
           width: elements.analysisCanvas.width,
@@ -1056,19 +1096,29 @@ async function produceCapture() {
   try {
     const stageRect = elements.cameraStage.getBoundingClientRect();
     const guideClient = elements.idGuide.getBoundingClientRect();
+    const stageGuideRect = {
+      x: guideClient.left - stageRect.left,
+      y: guideClient.top - stageRect.top,
+      width: guideClient.width,
+      height: guideClient.height,
+    };
     const sourceBox = guideCropInSource(
-      {
-        x: guideClient.left - stageRect.left,
-        y: guideClient.top - stageRect.top,
-        width: guideClient.width,
-        height: guideClient.height,
-      },
+      stageGuideRect,
       still.width,
       still.height,
       stageRect.width,
       stageRect.height,
     );
     const portraitGuide = activeProfile().captureOrientation === 'portrait';
+    const sourceGuideQuad = perspectiveCardGuide()
+      ? guideQuadInSource(
+          guideQuadInRect(stageGuideRect),
+          still.width,
+          still.height,
+          stageRect.width,
+          stageRect.height,
+        )
+      : null;
     const crop = normalizedIdCrop(
       sourceBox,
       still.width,
@@ -1104,6 +1154,14 @@ async function produceCapture() {
         context,
         still.source,
         crop,
+        nativeWidth,
+        nativeHeight,
+      );
+    } else if (sourceGuideQuad) {
+      drawPerspectiveQuadAsRectangle(
+        context,
+        still.source,
+        sourceGuideQuad,
         nativeWidth,
         nativeHeight,
       );

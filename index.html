@@ -24,10 +24,13 @@
     />
     <title>Sicherheit Nord · Ausweisscan</title>
     <script src="./legacy-redirect.js?v=20261010-tax-id-start-v16"></script>
-    <link rel="stylesheet" href="./styles.css?v=20261011-rotated-guide-v19" />
+    <link
+      rel="stylesheet"
+      href="./styles.css?v=20261012-perspective-guide-v20"
+    />
     <script
       type="module"
-      src="./scanner.js?v=20261011-rotated-guide-v19"
+      src="./scanner.js?v=20261012-perspective-guide-v20"
     ></script>
   </head>
   <body>
@@ -250,19 +253,22 @@
         </button>
         <div id="id-guide" class="id-guide is-red" aria-hidden="true">
           <svg
+            id="guide-outline"
             class="guide-outline"
-            viewBox="0 0 100 100"
+            viewBox="0 0 100 63"
             preserveAspectRatio="none"
             focusable="false"
           >
             <polygon
+              id="guide-outline-halo"
               class="guide-outline-halo"
-              points="5,2 95,2 99,98 1,98"
+              points="14,7 86,11 98,59 2,55"
               vector-effect="non-scaling-stroke"
             ></polygon>
             <polygon
+              id="guide-outline-color"
               class="guide-outline-color"
-              points="5,2 95,2 99,98 1,98"
+              points="14,7 86,11 98,59 2,55"
               vector-effect="non-scaling-stroke"
             ></polygon>
           </svg>

@@ -8,10 +8,15 @@ import {
   coverSourceRect,
   createHoldState,
   documentScanStatus,
+  drawPerspectiveQuadAsRectangle,
   drawPortraitCropAsLandscape,
   enhanceScanPixels,
   guideCropInSource,
+  guideQuadInRect,
+  guideQuadInSource,
   ID_CARD_ASPECT_RATIO,
+  ID_CARD_GUIDE_QUAD,
+  ID_CARD_GUIDE_VIEWBOX,
   ID_CARD_PORTRAIT_ASPECT_RATIO,
   isPlausibleTaxId,
   nextDocumentSlot,
@@ -20,7 +25,9 @@ import {
   parseDiscoveredScannerBootstrap,
   parseScannerBootstrap,
   PASSPORT_ASPECT_RATIO,
+  perspectiveRectificationMesh,
   portraitCaptureLayout,
+  projectPointInQuad,
   SCANNER_DOCUMENTS,
   scannerDocumentsForVersion,
   selectedDocumentPlanComplete,
@@ -157,6 +164,73 @@ function perspectiveFrameFixture({
     }
   }
   return { data, width, height };
+}
+
+function quadrilateralFrameFixture({
+  width = 480,
+  height = 640,
+  quad,
+  backgroundValue = 34,
+  cardValue = 210,
+  textValue = 64,
+} = {}) {
+  const points = [
+    quad.topLeft,
+    quad.topRight,
+    quad.bottomRight,
+    quad.bottomLeft,
+  ];
+  const bounds = {
+    x: Math.min(...points.map(({ x }) => x)),
+    y: Math.min(...points.map(({ y }) => y)),
+    right: Math.max(...points.map(({ x }) => x)),
+    bottom: Math.max(...points.map(({ y }) => y)),
+  };
+  const insideQuad = (x, y) => {
+    let sign = 0;
+    for (let index = 0; index < points.length; index += 1) {
+      const start = points[index];
+      const end = points[(index + 1) % points.length];
+      const cross =
+        (end.x - start.x) * (y - start.y) - (end.y - start.y) * (x - start.x);
+      if (Math.abs(cross) < 0.01) continue;
+      const currentSign = Math.sign(cross);
+      if (sign === 0) sign = currentSign;
+      else if (currentSign !== sign) return false;
+    }
+    return true;
+  };
+  const data = new Uint8ClampedArray(width * height * 4);
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const inside = insideQuad(x + 0.5, y + 0.5);
+      const text =
+        inside &&
+        y > bounds.y + 24 &&
+        y < bounds.bottom - 20 &&
+        ((y - Math.floor(bounds.y)) % 27 < 4 ||
+          ((x - Math.floor(bounds.x)) % 43 < 4 &&
+            x < bounds.x + (bounds.right - bounds.x) * 0.66));
+      const value = text ? textValue : inside ? cardValue : backgroundValue;
+      const offset = (y * width + x) * 4;
+      data[offset] = value;
+      data[offset + 1] = value;
+      data[offset + 2] = value;
+      data[offset + 3] = 255;
+    }
+  }
+  return { data, width, height };
+}
+
+function assertPointClose(actual, expected, epsilon = 1e-8) {
+  assert.ok(
+    Math.abs(actual.x - expected.x) <= epsilon,
+    `${actual.x} != ${expected.x}`,
+  );
+  assert.ok(
+    Math.abs(actual.y - expected.y) <= epsilon,
+    `${actual.y} != ${expected.y}`,
+  );
 }
 
 function sharpCapture(width = 1_400, height = 900) {
@@ -422,6 +496,155 @@ test('selected scan plan advances within a document and always returns to the da
   assert.deepEqual(
     nextSelectedPlanStep(['passport'], ['id-front'], 'id-front'),
     { kind: 'invalid' },
+  );
+});
+
+test('maps the exact wide perspective guide and analyzes its asymmetric edges', () => {
+  assert.deepEqual(ID_CARD_GUIDE_VIEWBOX, {
+    x: 0,
+    y: 0,
+    width: 100,
+    height: 63,
+  });
+  assert.deepEqual(ID_CARD_GUIDE_QUAD, {
+    topLeft: { x: 14, y: 7 },
+    topRight: { x: 86, y: 11 },
+    bottomRight: { x: 98, y: 59 },
+    bottomLeft: { x: 2, y: 55 },
+  });
+
+  const guide = { x: 10, y: 150, width: 460, height: 289.8 };
+  const quad = guideQuadInRect(guide);
+  assertPointClose(quad.topLeft, { x: 74.4, y: 182.2 });
+  assertPointClose(quad.topRight, { x: 405.6, y: 200.6 });
+  assertPointClose(quad.bottomRight, { x: 460.8, y: 421.4 });
+  assertPointClose(quad.bottomLeft, { x: 19.2, y: 403 });
+
+  const accepted = analyzeFramePosition(
+    quadrilateralFrameFixture({ quad }),
+    guide,
+    quad,
+  );
+  assert.equal(accepted.positioned, true);
+  assert.equal(accepted.strongEdges, 4);
+  assert.match(accepted.reason, /Position passt/);
+  assertPointClose(accepted.box, guide);
+  assert.ok(Math.abs(accepted.box.width - guide.width) <= 1e-8);
+  assert.ok(Math.abs(accepted.box.height - guide.height) <= 1e-8);
+  assert.deepEqual(accepted.quad, quad);
+});
+
+test('maps an on-screen perspective guide to the exact visible camera pixels', () => {
+  const viewGuide = guideQuadInRect({
+    x: 20,
+    y: 220,
+    width: 360,
+    height: 226.8,
+  });
+  const sourceGuide = guideQuadInSource(viewGuide, 4_000, 3_000, 400, 800);
+  const visibleSource = coverSourceRect(4_000, 3_000, 400, 800);
+  for (const name of ['topLeft', 'topRight', 'bottomRight', 'bottomLeft']) {
+    assertPointClose(sourceGuide[name], {
+      x: visibleSource.x + (viewGuide[name].x / 400) * visibleSource.width,
+      y: visibleSource.y + (viewGuide[name].y / 800) * visibleSource.height,
+    });
+  }
+});
+
+test('builds and draws a projective rectification mesh whose affine patches land exactly', () => {
+  const sourceQuad = {
+    topLeft: { x: 140, y: 70 },
+    topRight: { x: 860, y: 110 },
+    bottomRight: { x: 980, y: 590 },
+    bottomLeft: { x: 20, y: 550 },
+  };
+  assertPointClose(projectPointInQuad(sourceQuad, 0, 0), sourceQuad.topLeft);
+  assertPointClose(projectPointInQuad(sourceQuad, 1, 0), sourceQuad.topRight);
+  assertPointClose(
+    projectPointInQuad(sourceQuad, 1, 1),
+    sourceQuad.bottomRight,
+  );
+  assertPointClose(projectPointInQuad(sourceQuad, 0, 1), sourceQuad.bottomLeft);
+
+  const mesh = perspectiveRectificationMesh(sourceQuad, 856, 540, {
+    columns: 3,
+    rows: 2,
+  });
+  assert.equal(mesh.columns, 3);
+  assert.equal(mesh.rows, 2);
+  assert.equal(mesh.triangles.length, 12);
+  assertPointClose(mesh.triangles[0].source[0], sourceQuad.topLeft);
+  assertPointClose(mesh.triangles.at(-1).source[1], sourceQuad.bottomRight);
+  assertPointClose(mesh.triangles[0].destination[0], { x: 0, y: 0 });
+  assertPointClose(mesh.triangles.at(-1).destination[1], {
+    x: 856,
+    y: 540,
+  });
+
+  const transforms = [];
+  let drawCalls = 0;
+  let clips = 0;
+  const context = {
+    save() {},
+    restore() {},
+    beginPath() {},
+    moveTo() {},
+    lineTo() {},
+    closePath() {},
+    clip() {
+      clips += 1;
+    },
+    transform(...values) {
+      transforms.push(values);
+    },
+    drawImage() {
+      drawCalls += 1;
+    },
+  };
+  const source = {};
+  const result = drawPerspectiveQuadAsRectangle(
+    context,
+    source,
+    sourceQuad,
+    856,
+    540,
+    { columns: 3, rows: 2 },
+  );
+  assert.deepEqual(result, { columns: 3, rows: 2, triangleCount: 12 });
+  assert.equal(clips, 12);
+  assert.equal(drawCalls, 12);
+  assert.equal(transforms.length, 12);
+
+  for (let index = 0; index < mesh.triangles.length; index += 1) {
+    const [a, b, c, d, e, f] = transforms[index];
+    for (let point = 0; point < 3; point += 1) {
+      const sourcePoint = mesh.triangles[index].source[point];
+      assertPointClose(
+        {
+          x: a * sourcePoint.x + c * sourcePoint.y + e,
+          y: b * sourcePoint.x + d * sourcePoint.y + f,
+        },
+        mesh.triangles[index].destination[point],
+        1e-6,
+      );
+    }
+  }
+});
+
+test('rejects malformed perspective geometry before analysis or drawing', () => {
+  const crossedQuad = {
+    topLeft: { x: 0, y: 0 },
+    topRight: { x: 100, y: 100 },
+    bottomRight: { x: 100, y: 0 },
+    bottomLeft: { x: 0, y: 100 },
+  };
+  assert.throws(
+    () => guideQuadInRect({ x: 0, y: 0, width: 100, height: 63 }, crossedQuad),
+    /ungültig/,
+  );
+  assert.throws(
+    () => perspectiveRectificationMesh(crossedQuad, 856, 540),
+    /ungültig/,
   );
 });
 
