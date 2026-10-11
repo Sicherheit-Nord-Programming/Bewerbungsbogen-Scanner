@@ -20,7 +20,7 @@ import {
   portraitCaptureLayout,
   scannerDocumentsForVersion,
   updateHoldState,
-} from './scanner-core.js?v=20261011-landscape-guide-v18';
+} from './scanner-core.js?v=20261011-rotated-guide-v19';
 import {
   callRelayWithRecovery,
   createPhoneSession,
@@ -32,7 +32,7 @@ import {
   RelayError,
   uploadChunksConcurrently,
   waitForStaticSession,
-} from './relay-client.js?v=20261011-landscape-guide-v18';
+} from './relay-client.js?v=20261011-rotated-guide-v19';
 
 const MAX_FINALIZE_ATTEMPTS = 5;
 const LIVE_ANALYSIS_INTERVAL_MS = 145;
@@ -143,7 +143,6 @@ let pendingConfirm = false;
 let busy = false;
 let expiryTimer = 0;
 let captureFeedbackTimer = 0;
-let guideIntroductionTimer = 0;
 let documentOpenPending = false;
 let activeViewAnimation = null;
 let activeViewAnimationTarget = null;
@@ -154,41 +153,53 @@ const SLOT_PROFILES = Object.freeze({
   front: {
     title: 'Vorderseite Personalausweis',
     aspectRatio: ID_CARD_ASPECT_RATIO,
-    instruction: 'Ausweis quer in den Rahmen halten.',
+    captureOrientation: 'portrait',
+    instruction: 'Handy waagerecht halten. Ausweis hochkant ausrichten.',
   },
   back: {
     title: 'Rückseite Personalausweis',
     aspectRatio: ID_CARD_ASPECT_RATIO,
-    instruction: 'Ausweis quer in den Rahmen halten.',
+    captureOrientation: 'portrait',
+    instruction: 'Handy waagerecht halten. Ausweis hochkant ausrichten.',
   },
   'id-front': {
     title: 'Vorderseite Personalausweis',
     aspectRatio: ID_CARD_ASPECT_RATIO,
-    instruction: 'Personalausweis quer in den Rahmen halten.',
+    captureOrientation: 'portrait',
+    instruction:
+      'Handy waagerecht halten. Personalausweis hochkant ausrichten.',
   },
   'id-back': {
     title: 'Rückseite Personalausweis',
     aspectRatio: ID_CARD_ASPECT_RATIO,
-    instruction: 'Personalausweis quer in den Rahmen halten.',
+    captureOrientation: 'portrait',
+    instruction:
+      'Handy waagerecht halten. Personalausweis hochkant ausrichten.',
   },
   'passport-data': {
     title: 'Datenseite Reisepass',
     aspectRatio: PASSPORT_ASPECT_RATIO,
+    captureOrientation: 'portrait',
     instruction: 'Datenseite hochkant in den Rahmen halten.',
   },
   'health-front': {
     title: 'Vorderseite Krankenkassenkarte',
     aspectRatio: ID_CARD_ASPECT_RATIO,
-    instruction: 'Krankenkassenkarte quer in den Rahmen halten.',
+    captureOrientation: 'portrait',
+    instruction:
+      'Handy waagerecht halten. Krankenkassenkarte hochkant ausrichten.',
   },
   'health-back': {
     title: 'Rückseite Krankenkassenkarte',
     aspectRatio: ID_CARD_ASPECT_RATIO,
-    instruction: 'Krankenkassenkarte quer in den Rahmen halten.',
+    captureOrientation: 'portrait',
+    instruction:
+      'Handy waagerecht halten. Krankenkassenkarte hochkant ausrichten.',
   },
   'tax-id': {
     title: 'Steueridentifikationsnummer',
     aspectRatio: TAX_ID_PAGE_WIDTH / TAX_ID_PAGE_HEIGHT,
+    captureOrientation: 'landscape',
     instruction:
       'Nur den Bereich mit der Steueridentifikationsnummer fotografieren.',
   },
@@ -207,9 +218,7 @@ function sideTitle() {
 }
 
 function guideOrientationStatus() {
-  return activeProfile().aspectRatio === PASSPORT_ASPECT_RATIO
-    ? 'Oberkante nach rechts. Handy leicht zum Körper neigen.'
-    : 'Oberkante oben. Handy leicht zum Körper neigen.';
+  return 'Oberkante nach rechts. Handy waagerecht halten.';
 }
 
 function applyProfileVisuals() {
@@ -233,22 +242,6 @@ function setGuide(valid) {
   elements.idGuide.classList.remove('is-capture');
   elements.idGuide.classList.toggle('is-green', valid);
   elements.idGuide.classList.toggle('is-red', !valid);
-}
-
-function stopGuideIntroduction() {
-  window.clearTimeout(guideIntroductionTimer);
-  guideIntroductionTimer = 0;
-  elements.idGuide.classList.remove('is-introducing');
-}
-
-function playGuideIntroduction() {
-  stopGuideIntroduction();
-  // Restart the short demonstration whenever a document camera opens. The
-  // fixed guide element itself never moves, so detection and cropping retain
-  // exactly the same geometry while only its visual outline animates.
-  void elements.idGuide.offsetWidth;
-  elements.idGuide.classList.add('is-introducing');
-  guideIntroductionTimer = window.setTimeout(stopGuideIntroduction, 2600);
 }
 
 function setProgress(percent) {
@@ -440,7 +433,6 @@ function releaseCameraStream(stream, request) {
 
 function stopCamera() {
   stopAnalysis();
-  stopGuideIntroduction();
   cameraGeneration += 1;
   cameraRequest = null;
   const stream = mediaStream;
@@ -710,7 +702,6 @@ async function requestCamera() {
         return false;
       }
       applyProfileVisuals();
-      playGuideIntroduction();
       setCameraMessage(
         activeProfile().instruction,
         sessionClaimed
@@ -1077,7 +1068,7 @@ async function produceCapture() {
       stageRect.width,
       stageRect.height,
     );
-    const portraitGuide = activeProfile().aspectRatio === PASSPORT_ASPECT_RATIO;
+    const portraitGuide = activeProfile().captureOrientation === 'portrait';
     const crop = normalizedIdCrop(
       sourceBox,
       still.width,
