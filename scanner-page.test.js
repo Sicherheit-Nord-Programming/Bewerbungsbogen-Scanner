@@ -16,8 +16,8 @@ test('standalone page contains a live camera guide without external code', async
   assert.equal((html.match(/points="5,2 95,2 99,98 1,98"/g) ?? []).length, 2);
   assert.doesNotMatch(html, /class="corner /);
   assert.match(html, /id="countdown"/);
-  assert.match(html, /scanner\.js\?v=20261011-landscape-guide-v17/);
-  assert.match(html, /styles\.css\?v=20261011-landscape-guide-v17/);
+  assert.match(html, /scanner\.js\?v=20261011-landscape-guide-v18/);
+  assert.match(html, /styles\.css\?v=20261011-landscape-guide-v18/);
   assert.match(html, /<title>Sicherheit Nord · Ausweisscan<\/title>/);
   assert.match(
     html,
@@ -113,7 +113,11 @@ test('standalone page contains a live camera guide without external code', async
   assert.doesNotMatch(html, /<script[^>]+src="https:/);
   assert.match(script, /navigator\.mediaDevices\.getUserMedia/);
   assert.match(script, /Oberkante oben\. Handy leicht zum Körper neigen\./);
-  assert.doesNotMatch(script, /Oberkante nach rechts|Oberkante nach links/);
+  assert.match(
+    script,
+    /Oberkante nach rechts\. Handy leicht zum Körper neigen\./,
+  );
+  assert.doesNotMatch(script, /Oberkante nach links/);
   assert.match(script, /facingMode: \{ ideal: 'environment' \}/);
   assert.doesNotMatch(script, /\bzoom\b/i);
   assert.match(script, /resizeMode = \{ ideal: 'none' \}/);
@@ -147,8 +151,8 @@ test('standalone page contains a live camera guide without external code', async
   );
   assert.match(script, /prepareEncryptedCapture/);
   assert.match(script, /protocolVersion,/);
-  assert.match(script, /scanner-core\.js\?v=20261011-landscape-guide-v17/);
-  assert.match(script, /relay-client\.js\?v=20261011-landscape-guide-v17/);
+  assert.match(script, /scanner-core\.js\?v=20261011-landscape-guide-v18/);
+  assert.match(script, /relay-client\.js\?v=20261011-landscape-guide-v18/);
   assert.match(script, /callRelayWithRecovery\(/);
   assert.match(script, /'claim'[\s\S]+?shouldContinue: \(\) => !sessionClosed/);
   assert.match(script, /elements\.documentFinish\.hidden = false/);
@@ -396,6 +400,10 @@ test('standalone page contains a live camera guide without external code', async
   assert.match(orientationRule, /left:\s*50%/);
   assert.match(orientationRule, /translate\(-50%,\s*-50%\)/);
   assert.doesNotMatch(orientationRule, /right:\s*0|rotate\(90deg\)/);
+  assert.match(
+    styles,
+    /\.id-guide\.is-passport \.guide-orientation\s*\{[\s\S]*?top:\s*50%[\s\S]*?right:\s*0[\s\S]*?left:\s*auto[\s\S]*?rotate\(90deg\)/,
+  );
   const previewRule = styles.match(/#preview\s*\{([\s\S]*?)\}/)?.[1];
   assert.ok(previewRule);
   assert.match(previewRule, /width:\s*100%/);
@@ -469,11 +477,11 @@ test('a dashboard return detaches an in-flight camera request from the next docu
   const source = await readFile(scannerUrl, 'utf8');
   const instrumentedSource = source
     .replace(
-      "from './scanner-core.js?v=20261011-landscape-guide-v17';",
+      "from './scanner-core.js?v=20261011-landscape-guide-v18';",
       `from ${JSON.stringify(scannerCoreUrl)};`,
     )
     .replace(
-      "from './relay-client.js?v=20261011-landscape-guide-v17';",
+      "from './relay-client.js?v=20261011-landscape-guide-v18';",
       `from ${JSON.stringify(relayClientUrl)};`,
     )
     .replace(

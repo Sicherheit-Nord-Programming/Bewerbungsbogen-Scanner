@@ -666,6 +666,13 @@ button {
   backdrop-filter: blur(6px);
 }
 
+.id-guide.is-passport .guide-orientation {
+  top: 50%;
+  right: 0;
+  left: auto;
+  transform: translate(50%, -50%) rotate(90deg);
+}
+
 .guide-angle-hint {
   position: absolute;
   top: calc(100% + 16px);

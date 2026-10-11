@@ -20,7 +20,7 @@ import {
   portraitCaptureLayout,
   scannerDocumentsForVersion,
   updateHoldState,
-} from './scanner-core.js?v=20261011-landscape-guide-v17';
+} from './scanner-core.js?v=20261011-landscape-guide-v18';
 import {
   callRelayWithRecovery,
   createPhoneSession,
@@ -32,7 +32,7 @@ import {
   RelayError,
   uploadChunksConcurrently,
   waitForStaticSession,
-} from './relay-client.js?v=20261011-landscape-guide-v17';
+} from './relay-client.js?v=20261011-landscape-guide-v18';
 
 const MAX_FINALIZE_ATTEMPTS = 5;
 const LIVE_ANALYSIS_INTERVAL_MS = 145;
@@ -204,6 +204,12 @@ function activeProfile() {
 
 function sideTitle() {
   return activeProfile().title;
+}
+
+function guideOrientationStatus() {
+  return activeProfile().aspectRatio === PASSPORT_ASPECT_RATIO
+    ? 'Oberkante nach rechts. Handy leicht zum Körper neigen.'
+    : 'Oberkante oben. Handy leicht zum Körper neigen.';
 }
 
 function applyProfileVisuals() {
@@ -708,7 +714,7 @@ async function requestCamera() {
       setCameraMessage(
         activeProfile().instruction,
         sessionClaimed
-          ? 'Oberkante oben. Handy leicht zum Körper neigen.'
+          ? guideOrientationStatus()
           : 'Sichere Sitzung wird vorbereitet …',
       );
       if (sessionClaimed) beginAnalysis();
@@ -789,10 +795,7 @@ function beginAnalysis() {
   lastAnalysisAt = 0;
   setGuide(false);
   applyProfileVisuals();
-  setCameraMessage(
-    activeProfile().instruction,
-    'Oberkante oben · Handy leicht zum Körper neigen.',
-  );
+  setCameraMessage(activeProfile().instruction, guideOrientationStatus());
   const generation = analysisGeneration;
   const loop = (timestamp) => {
     if (
@@ -835,7 +838,7 @@ function beginAnalysis() {
           elements.countdown.textContent = holdState.countdown || '';
         } else {
           elements.sideLabel.textContent = sideTitle();
-          elements.cameraStatus.textContent = `${activeProfile().instruction} Handy leicht zum Körper neigen.`;
+          elements.cameraStatus.textContent = `${activeProfile().instruction} ${guideOrientationStatus()}`;
           elements.countdown.textContent = '';
         }
         // `updateHoldState` keeps a short grace window for one noisy camera
