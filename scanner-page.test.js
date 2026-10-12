@@ -12,13 +12,19 @@ test('standalone page contains a live camera guide without external code', async
   ]);
   assert.match(html, /<video[^>]+autoplay[^>]+muted[^>]+playsinline/);
   assert.match(html, /id="id-guide"/);
-  assert.match(html, /id="guide-outline"[^>]+class="guide-outline"/);
-  assert.match(html, /viewBox="0 0 100 63"/);
-  assert.equal((html.match(/points="14,7 86,11 98,59 2,55"/g) ?? []).length, 2);
-  assert.doesNotMatch(html, /class="corner /);
+  const guideMarkup = html.match(
+    /<div id="id-guide"[^>]*>([\s\S]*?)<\/div>/,
+  )?.[1];
+  assert.ok(guideMarkup);
+  assert.equal((guideMarkup.match(/class="corner /g) ?? []).length, 4);
+  assert.match(guideMarkup, /class="corner top-left"/);
+  assert.match(guideMarkup, /class="corner top-right"/);
+  assert.match(guideMarkup, /class="corner bottom-left"/);
+  assert.match(guideMarkup, /class="corner bottom-right"/);
+  assert.doesNotMatch(guideMarkup, /guide-outline|<polygon|<svg/);
   assert.match(html, /id="countdown"/);
-  assert.match(html, /scanner\.js\?v=20261012-perspective-guide-v20/);
-  assert.match(html, /styles\.css\?v=20261012-perspective-guide-v20/);
+  assert.match(html, /scanner\.js\?v=20261012-classic-guide-v21/);
+  assert.match(html, /styles\.css\?v=20261012-classic-guide-v21/);
   assert.match(html, /<title>Sicherheit Nord · Ausweisscan<\/title>/);
   assert.match(
     html,
@@ -143,19 +149,14 @@ test('standalone page contains a live camera guide without external code', async
     ).length,
     6,
   );
-  assert.match(script, /PORTRAIT_GUIDE_VIEW_BOX = '0 0 63 100'/);
-  assert.match(script, /PORTRAIT_GUIDE_POINTS = '2,2 61,2 61,98 2,98'/);
-  assert.match(script, /ID_CARD_GUIDE_QUAD/);
-  assert.match(script, /ID_CARD_GUIDE_VIEWBOX/);
-  assert.match(script, /guideViewBoxValue\(ID_CARD_GUIDE_VIEWBOX\)/);
-  assert.match(script, /guidePointsValue\(ID_CARD_GUIDE_QUAD\)/);
+  assert.doesNotMatch(script, /PORTRAIT_GUIDE_|ID_CARD_GUIDE_|guideOutline/);
   assert.match(
     script,
-    /elements\.guideOutline\.setAttribute\('viewBox', guideViewBox\)/,
+    /elements\.idGuide\.classList\.toggle\('is-passport', passport\)/,
   );
   assert.match(
     script,
-    /elements\.guideOutlineHalo\.setAttribute\('points', guidePoints\)/,
+    /elements\.preview\.parentElement\.classList\.toggle\('is-passport', passport\)/,
   );
   assert.match(
     script,
@@ -167,17 +168,10 @@ test('standalone page contains a live camera guide without external code', async
     script,
     /if \(portraitGuide\)[\s\S]+?drawPortraitCropAsLandscape/,
   );
-  assert.match(
+  assert.match(script, /analyzeFramePosition\(image, frame\.guideRect\)/);
+  assert.doesNotMatch(
     script,
-    /guideQuadInRect\(frame\.guideRect\)[\s\S]+?analyzeFramePosition\([\s\S]+?exactGuideQuad/,
-  );
-  assert.match(
-    script,
-    /guideQuadInSource\([\s\S]+?guideQuadInRect\(stageGuideRect\)[\s\S]+?still\.width[\s\S]+?stageRect\.height/,
-  );
-  assert.match(
-    script,
-    /else if \(sourceGuideQuad\)[\s\S]+?drawPerspectiveQuadAsRectangle\(/,
+    /guideQuadInRect|guideQuadInSource|drawPerspectiveQuadAsRectangle/,
   );
   assert.match(script, /else \{[\s\S]+?context\.drawImage\(/);
   assert.match(script, /drawPortraitCropAsLandscape\(/);
@@ -191,8 +185,8 @@ test('standalone page contains a live camera guide without external code', async
   );
   assert.match(script, /prepareEncryptedCapture/);
   assert.match(script, /protocolVersion,/);
-  assert.match(script, /scanner-core\.js\?v=20261012-perspective-guide-v20/);
-  assert.match(script, /relay-client\.js\?v=20261012-perspective-guide-v20/);
+  assert.match(script, /scanner-core\.js\?v=20261012-classic-guide-v21/);
+  assert.match(script, /relay-client\.js\?v=20261012-classic-guide-v21/);
   assert.match(script, /callRelayWithRecovery\(/);
   assert.match(script, /'claim'[\s\S]+?shouldContinue: \(\) => !sessionClosed/);
   assert.match(script, /elements\.documentFinish\.hidden = false/);
@@ -372,8 +366,33 @@ test('standalone page contains a live camera guide without external code', async
   );
   assert.match(
     styles,
-    /\.guide-outline-color\s*\{[\s\S]*?stroke:\s*var\(--guide-color\)/,
+    /\.id-guide\s*\{[\s\S]*?border:\s*3px solid color-mix\([\s\S]*?border-radius:\s*17px/,
   );
+  assert.match(
+    styles,
+    /\.corner\s*\{[\s\S]*?width:\s*36px[\s\S]*?height:\s*36px[\s\S]*?border-color:\s*var\(--guide-color\)/,
+  );
+  assert.match(
+    styles,
+    /\.corner\.top-left\s*\{[\s\S]*?border-width:\s*6px 0 0 6px/,
+  );
+  assert.match(
+    styles,
+    /\.corner\.top-right\s*\{[\s\S]*?border-width:\s*6px 6px 0 0/,
+  );
+  assert.match(
+    styles,
+    /\.corner\.bottom-left\s*\{[\s\S]*?border-width:\s*0 0 6px 6px/,
+  );
+  assert.match(
+    styles,
+    /\.corner\.bottom-right\s*\{[\s\S]*?border-width:\s*0 6px 6px 0/,
+  );
+  assert.match(
+    styles,
+    /\.id-guide\.is-capture\s*\{[\s\S]*?border-color:\s*#fff/,
+  );
+  assert.doesNotMatch(styles, /guide-outline|<polygon/);
   assert.doesNotMatch(styles, /guide-introduction|guide-hint|is-introducing/);
   assert.doesNotMatch(script, /GuideIntroduction|is-introducing/);
   assert.match(styles, /\.document-status\.is-in-progress/);
@@ -504,11 +523,11 @@ test('a dashboard return detaches an in-flight camera request from the next docu
   const source = await readFile(scannerUrl, 'utf8');
   const instrumentedSource = source
     .replace(
-      "from './scanner-core.js?v=20261012-perspective-guide-v20';",
+      "from './scanner-core.js?v=20261012-classic-guide-v21';",
       `from ${JSON.stringify(scannerCoreUrl)};`,
     )
     .replace(
-      "from './relay-client.js?v=20261012-perspective-guide-v20';",
+      "from './relay-client.js?v=20261012-classic-guide-v21';",
       `from ${JSON.stringify(relayClientUrl)};`,
     )
     .replace(

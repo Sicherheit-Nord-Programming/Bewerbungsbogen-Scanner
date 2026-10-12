@@ -92,9 +92,8 @@ entsprechen dem verschlüsselten Apps-Script-Relay-Protokoll.
    angefordert. Bei `v=2` erscheint zuerst die Dokumentauswahl. Verweigert der
    Browser den Kamerastart, erscheint ein Fallback-Button.
 2. Das Handy wird waagerecht gehalten; Karten liegen quer in einem großen,
-   perspektivischen Rahmen. Die obere, weiter entfernte Kante ist kürzer als
-   die untere Kante. Der Reisepass bleibt hochkant. Kurzes Handzittern setzt
-   den Countdown nicht sofort zurück.
+   abgerundeten Scanrahmen. Der Reisepass bleibt hochkant. Leicht schräge
+   Platzierung und kurzes Handzittern setzen den Countdown nicht sofort zurück.
 3. Nach drei echten Sekunden stabiler Lage wird der aktuelle Videoframe
    unmittelbar eingefroren. Das Handy vibriert, sofern der Browser dies erlaubt.
 4. Die technische Prüfung entspricht den Desktop-Grenzwerten für Auflösung,
