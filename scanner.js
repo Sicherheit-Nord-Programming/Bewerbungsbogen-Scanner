@@ -21,7 +21,7 @@ import {
   portraitCaptureLayout,
   scannerDocumentsForVersion,
   updateHoldState,
-} from './scanner-core.js?v=20261014-document-presence-v23';
+} from './scanner-core.js?v=20261014-passport-landscape-v24';
 import {
   callRelayWithRecovery,
   createPhoneSession,
@@ -33,7 +33,7 @@ import {
   RelayError,
   uploadChunksConcurrently,
   waitForStaticSession,
-} from './relay-client.js?v=20261014-document-presence-v23';
+} from './relay-client.js?v=20261014-passport-landscape-v24';
 
 const MAX_FINALIZE_ATTEMPTS = 5;
 const LIVE_ANALYSIS_INTERVAL_MS = 145;
@@ -184,8 +184,9 @@ const SLOT_PROFILES = Object.freeze({
   'passport-data': {
     title: 'Datenseite Reisepass',
     aspectRatio: PASSPORT_ASPECT_RATIO,
-    captureOrientation: 'portrait',
-    instruction: 'Datenseite hochkant in den Rahmen halten.',
+    captureOrientation: 'landscape',
+    instruction:
+      'Handy waagerecht halten. Datenseite quer in den Rahmen halten.',
   },
   'health-front': {
     title: 'Vorderseite Krankenkassenkarte',

@@ -652,11 +652,16 @@ button {
   --guide-color: #24d28c;
 }
 
-.id-guide.is-passport,
+.id-guide.is-passport {
+  width: min(94vw, 122vh, 980px);
+  width: min(94dvw, 122dvh, 980px);
+  aspect-ratio: 125 / 88;
+}
+
 .preview-frame.is-passport {
-  width: min(75vw, 44vh, 300px);
-  width: min(75vw, 44dvh, 300px);
-  aspect-ratio: 88 / 125;
+  width: min(88vw, 54vh, 430px);
+  width: min(88vw, 54dvh, 430px);
+  aspect-ratio: 125 / 88;
 }
 
 .preview-frame.is-tax-id {
@@ -915,17 +920,6 @@ button {
   object-fit: cover;
 }
 
-.preview-frame.is-passport #preview {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 142.05%;
-  max-width: none;
-  height: auto;
-  object-fit: initial;
-  transform: translate(-50%, -50%) rotate(90deg);
-}
-
 .preview-frame.is-tax-id #preview {
   position: static;
   width: 100%;
@@ -998,8 +992,8 @@ button {
   }
 
   .id-guide.is-passport {
-    width: min(58vw, 62vh, 520px);
-    width: min(58dvw, 62dvh, 520px);
+    width: min(92vw, 122vh, 980px);
+    width: min(92dvw, 122dvh, 980px);
   }
 
   .preview-frame {

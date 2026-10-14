@@ -1,7 +1,6 @@
 export const ID_CARD_ASPECT_RATIO = 85.6 / 53.98;
 export const ID_CARD_PORTRAIT_ASPECT_RATIO = 1 / ID_CARD_ASPECT_RATIO;
 export const PASSPORT_ASPECT_RATIO = 125 / 88;
-export const PASSPORT_PORTRAIT_ASPECT_RATIO = 1 / PASSPORT_ASPECT_RATIO;
 export const ID_CARD_GUIDE_VIEWBOX = Object.freeze({
   x: 0,
   y: 0,
@@ -1947,7 +1946,7 @@ function affineTransformBetweenTriangles(source, destination) {
 /**
  * Rectifies a perspective quadrilateral with the standard Canvas 2D API.
  * The destination context should belong to an output canvas of the requested
- * dimensions. Existing passport rotation can continue to use the dedicated
+ * dimensions. A future portrait capture can continue to use the dedicated
  * rectangular helper instead.
  */
 export function drawPerspectiveQuadAsRectangle(

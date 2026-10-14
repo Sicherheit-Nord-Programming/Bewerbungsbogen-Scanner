@@ -1247,24 +1247,25 @@ test('portrait crop preserves the complete card before counterclockwise landscap
   ]);
 });
 
-test('passport capture uses its wider 125 by 88 document ratio', () => {
-  const box = { x: 120, y: 70, width: 280, height: 398 };
+test('passport landscape capture uses its wider 125 by 88 document ratio', () => {
+  const box = { x: 70, y: 120, width: 398, height: 280 };
   const crop = normalizedIdCrop(
     box,
-    520,
     640,
+    520,
     0.018,
-    'portrait',
+    'landscape',
     PASSPORT_ASPECT_RATIO,
   );
+  assert.ok(Math.abs(crop.width / crop.height - PASSPORT_ASPECT_RATIO) < 1e-10);
+  assert.ok(crop.x <= box.x);
+  assert.ok(crop.y <= box.y);
+  assert.ok(crop.x + crop.width >= box.x + box.width);
+  assert.ok(crop.y + crop.height >= box.y + box.height);
+  const outputWidth = Math.floor(Math.min(2_400, crop.width));
+  const outputHeight = Math.floor(outputWidth / PASSPORT_ASPECT_RATIO);
+  assert.ok(outputWidth > outputHeight);
   assert.ok(
-    Math.abs(crop.width / crop.height - 1 / PASSPORT_ASPECT_RATIO) < 1e-10,
-  );
-  const layout = portraitCaptureLayout(crop, 2_400, PASSPORT_ASPECT_RATIO);
-  const expectedWidth = Math.floor(Math.min(2_400, crop.height));
-  assert.equal(layout.width, expectedWidth);
-  assert.equal(
-    layout.height,
-    Math.floor(expectedWidth / PASSPORT_ASPECT_RATIO),
+    Math.abs(outputWidth / outputHeight - PASSPORT_ASPECT_RATIO) < 0.002,
   );
 });

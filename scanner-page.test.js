@@ -25,8 +25,8 @@ test('standalone page contains a live camera guide without external code', async
   assert.match(html, /id="countdown"/);
   assert.match(html, /id="rotate-phone"/);
   assert.match(html, /Handy waagerecht drehen/);
-  assert.match(html, /scanner\.js\?v=20261014-document-presence-v23/);
-  assert.match(html, /styles\.css\?v=20261014-document-presence-v23/);
+  assert.match(html, /scanner\.js\?v=20261014-passport-landscape-v24/);
+  assert.match(html, /styles\.css\?v=20261014-passport-landscape-v24/);
   assert.match(html, /<title>Sicherheit Nord · Ausweisscan<\/title>/);
   assert.match(
     html,
@@ -188,11 +188,15 @@ test('standalone page contains a live camera guide without external code', async
   assert.match(script, /guideCropInSource\(/);
   assert.equal(
     (script.match(/captureOrientation: 'portrait'/g) ?? []).length,
-    1,
+    0,
   );
   assert.equal(
     (script.match(/captureOrientation: 'landscape'/g) ?? []).length,
-    7,
+    8,
+  );
+  assert.match(
+    script,
+    /'passport-data':\s*\{[\s\S]*?aspectRatio: PASSPORT_ASPECT_RATIO,[\s\S]*?captureOrientation: 'landscape',[\s\S]*?Datenseite quer in den Rahmen halten\./,
   );
   assert.equal(
     (
@@ -237,8 +241,8 @@ test('standalone page contains a live camera guide without external code', async
   );
   assert.match(script, /prepareEncryptedCapture/);
   assert.match(script, /protocolVersion,/);
-  assert.match(script, /scanner-core\.js\?v=20261014-document-presence-v23/);
-  assert.match(script, /relay-client\.js\?v=20261014-document-presence-v23/);
+  assert.match(script, /scanner-core\.js\?v=20261014-passport-landscape-v24/);
+  assert.match(script, /relay-client\.js\?v=20261014-passport-landscape-v24/);
   assert.match(script, /callRelayWithRecovery\(/);
   assert.match(script, /'claim'[\s\S]+?shouldContinue: \(\) => !sessionClosed/);
   assert.match(script, /elements\.documentFinish\.hidden = false/);
@@ -418,7 +422,7 @@ test('standalone page contains a live camera guide without external code', async
   );
   assert.match(
     styles,
-    /\.id-guide\.is-passport,[\s\S]*?aspect-ratio:\s*88\s*\/\s*125/,
+    /\.id-guide\.is-passport\s*\{[\s\S]*?aspect-ratio:\s*125\s*\/\s*88/,
   );
   assert.match(
     styles,
@@ -518,7 +522,11 @@ test('standalone page contains a live camera guide without external code', async
   assert.doesNotMatch(previewRule, /rotate\(90deg\)/);
   assert.match(
     styles,
-    /\.preview-frame\.is-passport #preview\s*\{[\s\S]*?rotate\(90deg\)/,
+    /\.preview-frame\.is-passport\s*\{[\s\S]*?aspect-ratio:\s*125\s*\/\s*88/,
+  );
+  assert.doesNotMatch(
+    styles,
+    /\.preview-frame\.is-passport #preview\s*\{[\s\S]*?rotate\(/,
   );
   const previewFrameRule = styles.match(
     /\.preview-frame\s*\{([\s\S]*?)\}/,
@@ -588,11 +596,11 @@ test('a dashboard return detaches an in-flight camera request from the next docu
   const source = await readFile(scannerUrl, 'utf8');
   const instrumentedSource = source
     .replace(
-      "from './scanner-core.js?v=20261014-document-presence-v23';",
+      "from './scanner-core.js?v=20261014-passport-landscape-v24';",
       `from ${JSON.stringify(scannerCoreUrl)};`,
     )
     .replace(
-      "from './relay-client.js?v=20261014-document-presence-v23';",
+      "from './relay-client.js?v=20261014-passport-landscape-v24';",
       `from ${JSON.stringify(relayClientUrl)};`,
     )
     .replace(

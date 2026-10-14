@@ -93,9 +93,9 @@ entsprechen dem verschlüsselten Apps-Script-Relay-Protokoll.
    Browser den Kamerastart, erscheint ein Fallback-Button.
 2. Das Handy wird waagerecht gehalten. Solange es hochkant steht, pausieren
    Erkennung und Countdown und die Seite fordert zum Drehen auf. Nach dem
-   Drehen läuft die Erkennung automatisch weiter. Karten liegen quer in einem
-   großen, fast bildschirmhohen Scanrahmen; der Reisepass bleibt als Dokument
-   hochkant. Leicht schräge Platzierung und kurzes Handzittern setzen den
+   Drehen läuft die Erkennung automatisch weiter. Karten und die Datenseite
+   des Reisepasses liegen quer in einem großen, fast bildschirmhohen
+   Scanrahmen. Leicht schräge Platzierung und kurzes Handzittern setzen den
    Countdown nicht sofort zurück.
 3. Der Countdown beginnt erst, wenn eine zusammenhängende Dokumentkante und
    eine für bedruckte Ausweise oder Pässe plausible Binnenstruktur erkannt
