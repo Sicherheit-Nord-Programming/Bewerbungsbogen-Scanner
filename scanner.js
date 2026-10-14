@@ -21,7 +21,17 @@ import {
   portraitCaptureLayout,
   scannerDocumentsForVersion,
   updateHoldState,
-} from './scanner-core.js?v=20261014-passport-landscape-v24';
+} from './scanner-core.js?v=20261014-document-allowlist-v25';
+import {
+  createVisualSignature,
+  documentVisualFingerprintsMatch,
+} from './document-recognizer-core.js?v=20261014-document-allowlist-v26';
+import {
+  cancelDocumentRecognition,
+  disposeDocumentRecognizer,
+  recognizeDocumentCanvas,
+  warmDocumentRecognizer,
+} from './document-recognizer.js?v=20261014-document-allowlist-v26';
 import {
   callRelayWithRecovery,
   createPhoneSession,
@@ -33,7 +43,7 @@ import {
   RelayError,
   uploadChunksConcurrently,
   waitForStaticSession,
-} from './relay-client.js?v=20261014-passport-landscape-v24';
+} from './relay-client.js?v=20261014-document-allowlist-v25';
 
 const MAX_FINALIZE_ATTEMPTS = 5;
 const LIVE_ANALYSIS_INTERVAL_MS = 145;
@@ -48,6 +58,9 @@ const RELAY_RECOVERY_DELAY_MS = 900;
 const UPLOAD_CONCURRENCY = 4;
 const TAX_ID_PAGE_WIDTH = 1_400;
 const TAX_ID_PAGE_HEIGHT = 1_980;
+const DOCUMENT_RECOGNITION_STABLE_MS = 450;
+const DOCUMENT_RECOGNITION_VALID_MS = 15_000;
+const DOCUMENT_RECOGNITION_RETRY_MS = 6_000;
 
 const elements = Object.fromEntries(
   [
@@ -153,6 +166,16 @@ let activeViewAnimation = null;
 let activeViewAnimationTarget = null;
 let previewReturnState = 'dashboard';
 let expandedPreviewFocusTarget = null;
+let documentRecognitionGeneration = 0;
+let documentCandidateSince = 0;
+let documentRecognition = {
+  status: 'idle',
+  slot: '',
+  signature: null,
+  result: null,
+  checkedAt: 0,
+  retryAt: 0,
+};
 
 const SLOT_PROFILES = Object.freeze({
   front: {
@@ -248,6 +271,127 @@ function setGuide(valid) {
   elements.idGuide.classList.remove('is-capture');
   elements.idGuide.classList.toggle('is-green', valid);
   elements.idGuide.classList.toggle('is-red', !valid);
+}
+
+function emptyDocumentRecognition() {
+  return {
+    status: 'idle',
+    slot: '',
+    signature: null,
+    result: null,
+    checkedAt: 0,
+    retryAt: 0,
+  };
+}
+
+function resetLiveDocumentRecognition({ cancelPending = false } = {}) {
+  documentRecognitionGeneration += 1;
+  documentCandidateSince = 0;
+  documentRecognition = emptyDocumentRecognition();
+  if (cancelPending) void cancelDocumentRecognition();
+}
+
+function documentRecognitionMessage(result) {
+  if (result?.reason === 'wrong-document') {
+    return 'Das ausgewählte Dokument liegt noch nicht passend im Rahmen.';
+  }
+  if (
+    result?.code === 'recognition-timeout' ||
+    result?.code === 'recognition-unavailable'
+  ) {
+    return result.reason;
+  }
+  return 'Dokumenttyp nicht eindeutig erkannt. Bitte vollständig und lesbar ausrichten.';
+}
+
+function recognizedCurrentDocument(signature, timestamp) {
+  return Boolean(
+    documentRecognition.status === 'accepted' &&
+    documentRecognition.slot === side &&
+    timestamp - documentRecognition.checkedAt <=
+      DOCUMENT_RECOGNITION_VALID_MS &&
+    documentVisualFingerprintsMatch(documentRecognition.signature, signature),
+  );
+}
+
+function rejectedCurrentDocument(signature, timestamp) {
+  return Boolean(
+    documentRecognition.status === 'rejected' &&
+    documentRecognition.slot === side &&
+    timestamp < documentRecognition.retryAt &&
+    documentVisualFingerprintsMatch(documentRecognition.signature, signature),
+  );
+}
+
+function queueLiveDocumentRecognition(signature) {
+  if (
+    documentRecognition.status === 'pending' ||
+    state !== 'scanning' ||
+    sessionClosed
+  ) {
+    return;
+  }
+  const recognitionCanvas = captureGuideCanvasForRecognition();
+  if (!recognitionCanvas) return;
+  const generation = ++documentRecognitionGeneration;
+  const recognitionSlot = side;
+  documentRecognition = {
+    status: 'pending',
+    slot: recognitionSlot,
+    signature,
+    result: null,
+    checkedAt: 0,
+    retryAt: 0,
+  };
+  setGuide(false);
+  setCameraMessage(
+    activeProfile().instruction,
+    'Dokument wird lokal geprüft …',
+  );
+
+  void recognizeDocumentCanvas(recognitionCanvas, recognitionSlot)
+    .then((result) => {
+      if (
+        generation !== documentRecognitionGeneration ||
+        state !== 'scanning' ||
+        sessionClosed ||
+        side !== recognitionSlot
+      ) {
+        return;
+      }
+      const checkedAt = performance.now();
+      documentRecognition = {
+        status: result.accepted ? 'accepted' : 'rejected',
+        slot: recognitionSlot,
+        signature,
+        result,
+        checkedAt,
+        retryAt: result.accepted
+          ? 0
+          : checkedAt + DOCUMENT_RECOGNITION_RETRY_MS,
+      };
+    })
+    .catch(() => {
+      if (generation !== documentRecognitionGeneration) return;
+      const checkedAt = performance.now();
+      documentRecognition = {
+        status: 'rejected',
+        slot: recognitionSlot,
+        signature,
+        result: {
+          accepted: false,
+          code: 'recognition-unavailable',
+          reason:
+            'Der Dokumenttyp konnte lokal nicht geprüft werden. Bitte erneut versuchen.',
+        },
+        checkedAt,
+        retryAt: checkedAt + DOCUMENT_RECOGNITION_RETRY_MS,
+      };
+    })
+    .finally(() => {
+      recognitionCanvas.width = 0;
+      recognitionCanvas.height = 0;
+    });
 }
 
 function phoneViewportIsLandscape() {
@@ -512,11 +656,12 @@ function resetTorchState() {
   updateTorchUi();
 }
 
-function stopAnalysis() {
+function stopAnalysis({ cancelRecognition = true } = {}) {
   analysisGeneration += 1;
   cancelAnimationFrame(analysisFrame);
   analysisFrame = 0;
   elements.countdown.textContent = '';
+  resetLiveDocumentRecognition({ cancelPending: cancelRecognition });
 }
 
 function stopStreamTracks(stream) {
@@ -642,6 +787,7 @@ function disposeSensitiveState() {
   elements.analysisCanvas.height = 0;
   elements.captureCanvas.width = 0;
   elements.captureCanvas.height = 0;
+  void disposeDocumentRecognizer();
 }
 
 function fail(message) {
@@ -724,6 +870,7 @@ async function waitForVideoMetadata(video) {
 
 async function requestCamera() {
   if (sessionClosed) return false;
+  if (side !== 'tax-id') void warmDocumentRecognizer();
   if (mediaStream) {
     const liveTrack = mediaStream
       .getVideoTracks()
@@ -898,7 +1045,7 @@ function beginAnalysis() {
   ) {
     return;
   }
-  stopAnalysis();
+  stopAnalysis({ cancelRecognition: false });
   state = 'scanning';
   holdState = createHoldState();
   lastPositionedBox = null;
@@ -935,18 +1082,71 @@ function beginAnalysis() {
           requireDocumentPresence: true,
           slot: side,
         });
+        const signature = createVisualSignature(image, frame.guideRect);
         image.data.fill(0);
-        if (!observation.documentPresent) {
+        const geometryReady = Boolean(
+          observation.documentPresent && observation.positioned && signature,
+        );
+        let semanticAccepted = recognizedCurrentDocument(signature, timestamp);
+
+        if (!observation.documentPresent || !signature) {
           holdState = createHoldState();
           lastPositionedBox = null;
-        } else {
+          documentCandidateSince = 0;
+        } else if (semanticAccepted) {
           holdState = updateHoldState(holdState, observation, timestamp, {
             width: elements.analysisCanvas.width,
             height: elements.analysisCanvas.height,
           });
+          if (observation.positioned) lastPositionedBox = observation.box;
+        } else if (!observation.positioned) {
+          holdState = createHoldState();
+          lastPositionedBox = null;
+          documentCandidateSince = 0;
+        } else {
+          if (!documentCandidateSince) documentCandidateSince = timestamp;
+          const samePendingDocument = Boolean(
+            documentRecognition.status === 'pending' &&
+            documentRecognition.slot === side &&
+            documentVisualFingerprintsMatch(
+              documentRecognition.signature,
+              signature,
+            ),
+          );
+          const sameStoredDocument = Boolean(
+            documentRecognition.slot === side &&
+            documentVisualFingerprintsMatch(
+              documentRecognition.signature,
+              signature,
+            ),
+          );
+          if (documentRecognition.status !== 'idle' && !sameStoredDocument) {
+            resetLiveDocumentRecognition({ cancelPending: true });
+            documentCandidateSince = timestamp;
+            semanticAccepted = false;
+          }
+          if (
+            !semanticAccepted &&
+            !samePendingDocument &&
+            !rejectedCurrentDocument(signature, timestamp) &&
+            timestamp - documentCandidateSince >= DOCUMENT_RECOGNITION_STABLE_MS
+          ) {
+            queueLiveDocumentRecognition(signature);
+          }
+          semanticAccepted = recognizedCurrentDocument(signature, timestamp);
+          if (semanticAccepted) {
+            holdState = updateHoldState(holdState, observation, timestamp, {
+              width: elements.analysisCanvas.width,
+              height: elements.analysisCanvas.height,
+            });
+            if (observation.positioned) lastPositionedBox = observation.box;
+          } else {
+            holdState = createHoldState();
+            lastPositionedBox = null;
+          }
         }
-        if (observation.positioned) lastPositionedBox = observation.box;
-        const visuallyValid = observation.positioned || holdState.holding;
+        const visuallyValid =
+          semanticAccepted && (observation.positioned || holdState.holding);
         setGuide(visuallyValid);
         if (visuallyValid) {
           elements.sideLabel.textContent = sideTitle();
@@ -955,6 +1155,23 @@ function beginAnalysis() {
             holdState.countdown,
           )} …`;
           elements.countdown.textContent = holdState.countdown || '';
+        } else if (documentRecognition.status === 'pending' && geometryReady) {
+          elements.sideLabel.textContent = sideTitle();
+          elements.cameraStatus.textContent = 'Dokument wird lokal geprüft …';
+          elements.countdown.textContent = '';
+        } else if (
+          documentRecognition.status === 'rejected' &&
+          documentRecognition.slot === side &&
+          documentVisualFingerprintsMatch(
+            documentRecognition.signature,
+            signature,
+          )
+        ) {
+          elements.sideLabel.textContent = sideTitle();
+          elements.cameraStatus.textContent = documentRecognitionMessage(
+            documentRecognition.result,
+          );
+          elements.countdown.textContent = '';
         } else {
           elements.sideLabel.textContent = sideTitle();
           elements.cameraStatus.textContent = `${observation.reason} ${guideOrientationStatus()}`;
@@ -966,6 +1183,7 @@ function beginAnalysis() {
         // for another positioned frame was the source of late/missed shots.
         if (
           holdState.ready &&
+          semanticAccepted &&
           observation.documentPresent &&
           lastPositionedBox
         ) {
@@ -1009,6 +1227,72 @@ function captureVideoFrame() {
     },
     kind: 'video',
   };
+}
+
+function captureGuideCanvasForRecognition() {
+  const still = captureVideoFrame();
+  if (!still) return null;
+  const canvas = document.createElement('canvas');
+  try {
+    const stageRect = elements.cameraStage.getBoundingClientRect();
+    const guideClient = elements.idGuide.getBoundingClientRect();
+    if (
+      stageRect.width <= 0 ||
+      stageRect.height <= 0 ||
+      guideClient.width <= 0 ||
+      guideClient.height <= 0
+    ) {
+      return null;
+    }
+    const stageGuideRect = {
+      x: guideClient.left - stageRect.left,
+      y: guideClient.top - stageRect.top,
+      width: guideClient.width,
+      height: guideClient.height,
+    };
+    const sourceBox = guideCropInSource(
+      stageGuideRect,
+      still.width,
+      still.height,
+      stageRect.width,
+      stageRect.height,
+    );
+    const portraitGuide = activeProfile().captureOrientation === 'portrait';
+    const crop = normalizedIdCrop(
+      sourceBox,
+      still.width,
+      still.height,
+      0,
+      portraitGuide ? 'portrait' : 'landscape',
+      activeProfile().aspectRatio,
+    );
+    const width = Math.max(1, Math.floor(Math.min(1_800, crop.width)));
+    const height = Math.max(1, Math.floor(width / activeProfile().aspectRatio));
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext('2d', { alpha: false });
+    if (!context) return null;
+    context.imageSmoothingEnabled = true;
+    context.imageSmoothingQuality = 'high';
+    if (portraitGuide) {
+      drawPortraitCropAsLandscape(context, still.source, crop, width, height);
+    } else {
+      context.drawImage(
+        still.source,
+        crop.x,
+        crop.y,
+        crop.width,
+        crop.height,
+        0,
+        0,
+        width,
+        height,
+      );
+    }
+    return canvas;
+  } finally {
+    still.close();
+  }
 }
 
 async function canvasToJpeg(canvas) {
@@ -1162,6 +1446,14 @@ async function normalizeTaxIdPhoto(file) {
       width,
       height,
     );
+    const photoImage = context.getImageData(0, 0, canvas.width, canvas.height);
+    const photoQuality = analyzeCaptureQuality(photoImage);
+    photoImage.data.fill(0);
+    if (!photoQuality.accepted) throw new Error(photoQuality.message);
+    const recognition = await recognizeDocumentCanvas(canvas, 'tax-id');
+    if (!recognition.accepted) {
+      throw new Error(documentRecognitionMessage(recognition));
+    }
     const encoded = await canvasToJpeg(canvas);
     return {
       quality: { accepted: true, status: 'accepted' },
@@ -1183,6 +1475,8 @@ async function produceCapture() {
   const still = captureVideoFrame();
   if (!still) throw new Error('Das Kamerabild ist noch nicht bereit.');
   const canvas = elements.captureCanvas;
+  const capturedSlot = side;
+  const capturedCameraGeneration = cameraGeneration;
   let image = null;
   let temporaryCanvas = null;
   try {
@@ -1268,16 +1562,42 @@ async function produceCapture() {
       image.data.fill(0);
       return { quality: nativeQuality };
     }
-    const documentPresence = analyzeDocumentPresence(image, { slot: side });
+    const documentPresence = analyzeDocumentPresence(image, {
+      slot: capturedSlot,
+    });
     if (!documentPresence.accepted) {
       image.data.fill(0);
       return { quality: documentPresence };
     }
-    // The frozen camera frame is now accepted. Signal the shutter immediately,
-    // before upscaling, enhancement and JPEG encoding add visible latency.
-    triggerCaptureFeedback();
     image.data.fill(0);
     image = null;
+    const recognition = await recognizeDocumentCanvas(canvas, capturedSlot);
+    if (
+      sessionClosed ||
+      state !== 'capturing' ||
+      side !== capturedSlot ||
+      cameraGeneration !== capturedCameraGeneration
+    ) {
+      return {
+        quality: {
+          accepted: false,
+          status: 'interrupted',
+          message: 'Die Aufnahme wurde unterbrochen. Bitte erneut versuchen.',
+        },
+      };
+    }
+    if (!recognition.accepted) {
+      return {
+        quality: {
+          accepted: false,
+          status: 'document-type',
+          message: documentRecognitionMessage(recognition),
+        },
+      };
+    }
+    // Signal success only after the exact frozen frame has independently
+    // passed the selected document-type check.
+    triggerCaptureFeedback();
 
     const outputWidth =
       still.kind === 'video' && nativeWidth < VIDEO_FALLBACK_OUTPUT_LONG_EDGE
@@ -1747,12 +2067,12 @@ function resumeOrRequestCamera() {
 async function captureAutomatically() {
   if (state !== 'scanning' || busy || sessionClosed) return;
   state = 'capturing';
-  stopAnalysis();
+  stopAnalysis({ cancelRecognition: false });
   setGuide(true);
   elements.countdown.textContent = '';
   setCameraMessage(
-    'Aufnahme wird erstellt …',
-    '3–2–1 abgeschlossen. Bitte das Handy kurz ruhig halten.',
+    'Aufnahme wird geprüft …',
+    '3–2–1 abgeschlossen. Das eingefrorene Bild wird lokal geprüft.',
   );
   try {
     const result = await produceCapture();
@@ -2127,6 +2447,7 @@ function repeatCapture() {
 
 function completeSession(returnToDashboard = false) {
   stopCamera();
+  void disposeDocumentRecognizer();
   clearTimeout(expiryTimer);
   expiryTimer = 0;
   clearRetryPayload();
@@ -2463,6 +2784,7 @@ window.addEventListener('pagehide', disposeSensitiveState, { once: true });
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden') {
     if (mediaStream || cameraRequest) stopCamera();
+    void disposeDocumentRecognizer();
     return;
   }
   if (

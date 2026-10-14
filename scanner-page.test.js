@@ -1,8 +1,63 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
 
 const directory = new URL('./', import.meta.url);
+
+test('local OCR runtime and German language model are pinned and self-hosted', async () => {
+  const expectedHashes = new Map([
+    [
+      'ocr-v1/runtime/tesseract.esm.min.js',
+      '64871d76c75609fd5413b88a8171e2ef40deedd77d5875ba23df104b2d05eb29',
+    ],
+    [
+      'ocr-v1/runtime/worker.min.js',
+      '576b7df7e3393e137e51849357c9adb53fe7ac1bb69bfa06cf3d61520f182c6d',
+    ],
+    [
+      'ocr-v1/core/tesseract-core-lstm.wasm.js',
+      'eef5f8b2f8e20e150680b20adaec4a60babafee3adbe8a94583c81fee46e8680',
+    ],
+    [
+      'ocr-v1/core/tesseract-core-simd-lstm.wasm.js',
+      'c58b46a4c796c0b8afccf77591d5b875b6896b45d402bbce8caa6f5362447b38',
+    ],
+    [
+      'ocr-v1/core/tesseract-core-relaxedsimd-lstm.wasm.js',
+      '861a536cf9ef8e63cb644d57bab39c388f37f7d6b6f60024b741c5f6b39a59b3',
+    ],
+    [
+      'ocr-v1/lang/deu.traineddata.gz',
+      '306c4280d0cbed46fbff727486bd43b92730181bae80f56941a091f363bdf28b',
+    ],
+  ]);
+
+  for (const [relativePath, expectedHash] of expectedHashes) {
+    const contents = await readFile(new URL(relativePath, directory));
+    assert.equal(
+      createHash('sha256').update(contents).digest('hex'),
+      expectedHash,
+      `${relativePath} must remain the reviewed dependency artifact`,
+    );
+  }
+
+  const adapter = await readFile(
+    new URL('document-recognizer.js', directory),
+    'utf8',
+  );
+  assert.match(adapter, /\.\/ocr-v1\/runtime\/tesseract\.esm\.min\.js/);
+  assert.match(adapter, /workerPath: WORKER_PATH/);
+  assert.match(adapter, /corePath: CORE_PATH/);
+  assert.match(adapter, /langPath: LANGUAGE_PATH/);
+  assert.match(adapter, /parseOcrTsvLines/);
+  assert.match(adapter, /\{ text: true, tsv: true \}/);
+  assert.match(adapter, /let recognitionGeneration = 0/);
+  assert.match(adapter, /assertCurrentRecognition\(generation\)/);
+  assert.match(adapter, /export async function cancelDocumentRecognition\(\)/);
+  assert.match(adapter, /const queuedBeforeCancellation = serialJob/);
+  assert.doesNotMatch(adapter, /https?:\/\//);
+});
 
 test('standalone page contains a live camera guide without external code', async () => {
   const [html, script, styles] = await Promise.all([
@@ -25,7 +80,7 @@ test('standalone page contains a live camera guide without external code', async
   assert.match(html, /id="countdown"/);
   assert.match(html, /id="rotate-phone"/);
   assert.match(html, /Handy waagerecht drehen/);
-  assert.match(html, /scanner\.js\?v=20261014-passport-landscape-v24/);
+  assert.match(html, /scanner\.js\?v=20261014-document-allowlist-v26/);
   assert.match(html, /styles\.css\?v=20261014-passport-landscape-v24/);
   assert.match(html, /<title>Sicherheit Nord · Ausweisscan<\/title>/);
   assert.match(
@@ -161,14 +216,25 @@ test('standalone page contains a live camera guide without external code', async
   );
   assert.match(
     script,
-    /if \(!observation\.documentPresent\) \{[\s\S]+?holdState = createHoldState\(\);[\s\S]+?lastPositionedBox = null/,
+    /if \(!observation\.documentPresent \|\| !signature\) \{[\s\S]+?holdState = createHoldState\(\);[\s\S]+?lastPositionedBox = null/,
   );
-  assert.match(script, /analyzeDocumentPresence\(image, \{ slot: side \}\)/);
+  assert.match(
+    script,
+    /analyzeDocumentPresence\(image, \{[\s\S]+?slot: capturedSlot,[\s\S]+?\}\)/,
+  );
   assert.match(script, /triggerCaptureFeedback\(\)/);
   const capturePreparation = script.indexOf('async function produceCapture');
   const frozenGate = script.indexOf(
     'if (!documentPresence.accepted)',
     capturePreparation,
+  );
+  const frozenDocumentTypeGate = script.indexOf(
+    'const recognition = await recognizeDocumentCanvas(canvas, capturedSlot)',
+    capturePreparation,
+  );
+  const rejectedDocumentTypeGate = script.indexOf(
+    'if (!recognition.accepted)',
+    frozenDocumentTypeGate,
   );
   const captureFeedback = script.indexOf(
     'triggerCaptureFeedback();',
@@ -180,9 +246,11 @@ test('standalone page contains a live camera guide without external code', async
   );
   assert.ok(
     frozenGate >= 0 &&
-      captureFeedback > frozenGate &&
+      frozenDocumentTypeGate > frozenGate &&
+      rejectedDocumentTypeGate > frozenDocumentTypeGate &&
+      captureFeedback > rejectedDocumentTypeGate &&
       jpegEncoding > captureFeedback,
-    'feedback must happen after frozen-frame validation but before JPEG encoding',
+    'feedback must happen after frozen-frame geometry and document-type validation but before JPEG encoding',
   );
   assert.match(script, /const still = captureVideoFrame\(\)/);
   assert.match(script, /guideCropInSource\(/);
@@ -241,8 +309,30 @@ test('standalone page contains a live camera guide without external code', async
   );
   assert.match(script, /prepareEncryptedCapture/);
   assert.match(script, /protocolVersion,/);
-  assert.match(script, /scanner-core\.js\?v=20261014-passport-landscape-v24/);
-  assert.match(script, /relay-client\.js\?v=20261014-passport-landscape-v24/);
+  assert.match(script, /scanner-core\.js\?v=20261014-document-allowlist-v25/);
+  assert.match(
+    script,
+    /document-recognizer-core\.js\?v=20261014-document-allowlist-v26/,
+  );
+  assert.match(
+    script,
+    /document-recognizer\.js\?v=20261014-document-allowlist-v26/,
+  );
+  assert.match(script, /relay-client\.js\?v=20261014-document-allowlist-v25/);
+  assert.match(script, /recognizeDocumentCanvas\(canvas, capturedSlot\)/);
+  assert.match(script, /recognizeDocumentCanvas\(canvas, 'tax-id'\)/);
+  assert.match(script, /cancelDocumentRecognition/);
+  assert.match(
+    script,
+    /resetLiveDocumentRecognition\(\{ cancelPending: true \}\)/,
+  );
+  assert.match(script, /function stopCamera\(\) \{[\s\S]+?stopAnalysis\(\);/);
+  assert.match(
+    script,
+    /async function captureAutomatically\(\)[\s\S]+?stopAnalysis\(\{ cancelRecognition: false \}\)/,
+  );
+  assert.match(script, /documentVisualFingerprintsMatch\(/);
+  assert.match(script, /Dokument wird lokal geprüft/);
   assert.match(script, /callRelayWithRecovery\(/);
   assert.match(script, /'claim'[\s\S]+?shouldContinue: \(\) => !sessionClosed/);
   assert.match(script, /elements\.documentFinish\.hidden = false/);
@@ -574,6 +664,18 @@ test('neutral Firebase hosting is isolated and old QR links retain their fragmen
   );
   assert.equal(headers['Cache-Control'], 'no-cache, no-store, must-revalidate');
   assert.match(headers['Content-Security-Policy'], /frame-ancestors 'none'/);
+  assert.match(
+    headers['Content-Security-Policy'],
+    /script-src 'self' 'wasm-unsafe-eval'/,
+  );
+  assert.match(headers['Content-Security-Policy'], /worker-src 'self'/);
+  assert.equal(firebase.hosting.headers[1].source, '/ocr-v1/**');
+  assert.equal(
+    firebase.hosting.headers[1].headers.find(
+      ({ key }) => key === 'Cache-Control',
+    )?.value,
+    'public, max-age=31536000, immutable',
+  );
   assert.equal(
     headers['Permissions-Policy'],
     'camera=(self), microphone=(), geolocation=()',
@@ -592,15 +694,35 @@ test('neutral Firebase hosting is isolated and old QR links retain their fragmen
 test('a dashboard return detaches an in-flight camera request from the next document', async () => {
   const scannerUrl = new URL('scanner.js', directory);
   const scannerCoreUrl = new URL('scanner-core.js', directory).href;
+  const documentRecognizerCoreUrl = new URL(
+    'document-recognizer-core.js',
+    directory,
+  ).href;
+  const documentRecognizerStubUrl = `data:text/javascript;base64,${Buffer.from(`
+export function warmDocumentRecognizer() { return Promise.resolve(true); }
+export function recognizeDocumentCanvas() {
+  return Promise.resolve({ accepted: false, reason: 'test stub' });
+}
+export function cancelDocumentRecognition() { return Promise.resolve(); }
+export function disposeDocumentRecognizer() { return Promise.resolve(); }
+`).toString('base64')}`;
   const relayClientUrl = new URL('relay-client.js', directory).href;
   const source = await readFile(scannerUrl, 'utf8');
   const instrumentedSource = source
     .replace(
-      "from './scanner-core.js?v=20261014-passport-landscape-v24';",
+      "from './scanner-core.js?v=20261014-document-allowlist-v25';",
       `from ${JSON.stringify(scannerCoreUrl)};`,
     )
     .replace(
-      "from './relay-client.js?v=20261014-passport-landscape-v24';",
+      "from './document-recognizer-core.js?v=20261014-document-allowlist-v26';",
+      `from ${JSON.stringify(documentRecognizerCoreUrl)};`,
+    )
+    .replace(
+      "from './document-recognizer.js?v=20261014-document-allowlist-v26';",
+      `from ${JSON.stringify(documentRecognizerStubUrl)};`,
+    )
+    .replace(
+      "from './relay-client.js?v=20261014-document-allowlist-v25';",
       `from ${JSON.stringify(relayClientUrl)};`,
     )
     .replace(

@@ -97,20 +97,30 @@ entsprechen dem verschlüsselten Apps-Script-Relay-Protokoll.
    des Reisepasses liegen quer in einem großen, fast bildschirmhohen
    Scanrahmen. Leicht schräge Platzierung und kurzes Handzittern setzen den
    Countdown nicht sofort zurück.
-3. Der Countdown beginnt erst, wenn eine zusammenhängende Dokumentkante und
-   eine für bedruckte Ausweise oder Pässe plausible Binnenstruktur erkannt
-   werden. Regelmäßige zweidimensionale Raster wie eine Computertastatur sowie
-   leere Kartenflächen werden abgewiesen.
+3. Die schnelle Kanten- und Strukturprüfung ist nur ein Vorfilter. Anschließend
+   prüft eine vollständig lokal im Handy-Browser ausgeführte OCR positiv, ob
+   genau der ausgewählte Dokumenttyp und die ausgewählte Seite erkannt wurden.
+   Erst danach wird der Rahmen grün und der Countdown beginnt. Ein beliebiges
+   Rechteck mit Text – etwa eine Tastatur, Visitenkarte oder Formularseite –
+   reicht ausdrücklich nicht aus. Bei Ausweis- und Gesundheitskartenfronten
+   müssen zusätzlich mehrere getrennte, dokumenttypisch positionierte
+   Datenzeilen mit plausiblen Werten erkannt werden; bloße Schlüsselwörter in
+   einem Artikel oder Informationsblatt genügen nicht.
 4. Nach drei echten Sekunden stabiler Lage wird der aktuelle Videoframe
    unmittelbar eingefroren und unabhängig erneut geprüft. Erst nach dieser
    zweiten Prüfung vibriert das Handy, sofern der Browser dies erlaubt.
 5. Die technische Prüfung entspricht den Desktop-Grenzwerten für Auflösung,
    Helligkeit, Kontrast, Laplace-Schärfe, Clipping und lokale Spiegelung. Die
-   Dokumentprüfung ist eine lokale Plausibilitätsprüfung und keine Echtheits-
-   oder Gültigkeitsprüfung.
+   Dokumenttypprüfung läuft mit selbst gehostetem Tesseract.js ohne zusätzlichen
+   OCR-Cloud-Dienst. Ein erkannter Reisepass beziehungsweise eine erkannte
+   Personalausweis-Rückseite benötigt zusätzlich eine gültige MRZ-Struktur und
+   Prüfziffern. Die Prüfung ist keine Echtheits-, Gültigkeits- oder
+   Lebenderkennung.
 6. Abgelehnte Aufnahmen starten automatisch neu. Angenommene Aufnahmen werden
-   konservativ zugeschnitten und farblich optimiert. Es findet weder OCR noch
-   generatives Rekonstruieren unlesbarer Schrift statt.
+   konservativ zugeschnitten und farblich optimiert. OCR-Texte werden nur im
+   Arbeitsspeicher klassifiziert, weder protokolliert noch an den Relay-Dienst
+   übertragen und anschließend verworfen. Unlesbare Schrift wird nicht
+   generativ rekonstruiert.
 7. Vor der verschlüsselten Übertragung bestätigt der Nutzer die sichtbare
    Vorschau. Bei zweiseitigen Dokumenten folgt automatisch die Rückseite. Sind
    weitere Dokumente ausgewählt, führt der Abschluss eines Dokuments zurück
