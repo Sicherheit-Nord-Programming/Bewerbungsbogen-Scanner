@@ -84,7 +84,7 @@ test('standalone page contains a live camera guide without external code', async
   assert.match(html, /id="countdown"/);
   assert.match(html, /id="rotate-phone"/);
   assert.match(html, /Handy waagerecht drehen/);
-  assert.match(html, /scanner\.js\?v=20261014-document-allowlist-v26/);
+  assert.match(html, /scanner\.js\?v=20261015-camera-instructions-v27/);
   assert.match(html, /styles\.css\?v=20261014-passport-landscape-v24/);
   assert.match(html, /<title>Sicherheit Nord · Ausweisscan<\/title>/);
   assert.match(
@@ -178,6 +178,14 @@ test('standalone page contains a live camera guide without external code', async
   assert.doesNotMatch(html, /<script[^>]+src="https:/);
   assert.match(script, /navigator\.mediaDevices\.getUserMedia/);
   assert.match(script, /Oberkante oben\. Handy waagerecht halten\./);
+  assert.match(script, /Bitte stillhalten\. Dokument wird geprüft …/);
+  assert.match(script, /Bitte das Dokument ruhig in den Rahmen halten\./);
+  assert.match(script, /Bitte das Dokument bereithalten\./);
+  assert.match(script, /setCameraMessage\(activeProfile\(\)\.instruction\);/);
+  assert.doesNotMatch(
+    script,
+    /Sichere Sitzung wird vorbereitet|Dokument wird lokal geprüft|Das Kamerabild wird vorbereitet/,
+  );
   assert.match(script, /function phoneViewportIsLandscape\(\)/);
   assert.match(script, /window\.visualViewport/);
   assert.match(script, /function updatePhoneOrientation\(\)/);
@@ -336,7 +344,7 @@ test('standalone page contains a live camera guide without external code', async
     /async function captureAutomatically\(\)[\s\S]+?stopAnalysis\(\{ cancelRecognition: false \}\)/,
   );
   assert.match(script, /documentVisualFingerprintsMatch\(/);
-  assert.match(script, /Dokument wird lokal geprüft/);
+  assert.match(script, /Bitte stillhalten\. Dokument wird geprüft/);
   assert.match(script, /callRelayWithRecovery\(/);
   assert.match(script, /'claim'[\s\S]+?shouldContinue: \(\) => !sessionClosed/);
   assert.match(script, /elements\.documentFinish\.hidden = false/);
@@ -503,7 +511,7 @@ test('standalone page contains a live camera guide without external code', async
   );
   assert.match(
     script,
-    /visibilitychange[\s\S]+?document\.visibilityState === 'hidden'[\s\S]+?stopCamera\(\)[\s\S]+?setCameraMessage\('Kamera wird geöffnet …',[\s\S]+?void requestCamera\(\)/,
+    /visibilitychange[\s\S]+?document\.visibilityState === 'hidden'[\s\S]+?stopCamera\(\)[\s\S]+?setCameraMessage\(\s*'Kamera wird geöffnet …',[\s\S]+?void requestCamera\(\)/,
   );
   assert.doesNotMatch(
     script,

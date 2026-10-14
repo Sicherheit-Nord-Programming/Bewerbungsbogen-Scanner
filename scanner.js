@@ -346,7 +346,7 @@ function queueLiveDocumentRecognition(signature) {
   setGuide(false);
   setCameraMessage(
     activeProfile().instruction,
-    'Dokument wird lokal geprüft …',
+    'Bitte stillhalten. Dokument wird geprüft …',
   );
 
   void recognizeDocumentCanvas(recognitionCanvas, recognitionSlot)
@@ -967,12 +967,7 @@ async function requestCamera() {
         return false;
       }
       applyProfileVisuals();
-      setCameraMessage(
-        activeProfile().instruction,
-        sessionClaimed
-          ? guideOrientationStatus()
-          : 'Sichere Sitzung wird vorbereitet …',
-      );
+      setCameraMessage(activeProfile().instruction);
       const landscapeReady = updatePhoneOrientation();
       if (sessionClaimed && landscapeReady) beginAnalysis();
       return true;
@@ -1157,7 +1152,8 @@ function beginAnalysis() {
           elements.countdown.textContent = holdState.countdown || '';
         } else if (documentRecognition.status === 'pending' && geometryReady) {
           elements.sideLabel.textContent = sideTitle();
-          elements.cameraStatus.textContent = 'Dokument wird lokal geprüft …';
+          elements.cameraStatus.textContent =
+            'Bitte stillhalten. Dokument wird geprüft …';
           elements.countdown.textContent = '';
         } else if (
           documentRecognition.status === 'rejected' &&
@@ -1194,7 +1190,7 @@ function beginAnalysis() {
         setGuide(false);
         setCameraMessage(
           activeProfile().instruction,
-          'Das Kamerabild wird vorbereitet …',
+          'Bitte das Dokument ruhig in den Rahmen halten.',
         );
       }
     }
@@ -1955,7 +1951,7 @@ function openDocument(documentId) {
   elements.backToDashboard.hidden = false;
   state = 'scanning';
   setGuide(false);
-  setCameraMessage('Kamera wird geöffnet …', 'Bitte einen Moment warten.');
+  setCameraMessage('Kamera wird geöffnet …', 'Bitte das Dokument bereithalten.');
   animateViewIn(elements.cameraStage, 'forward');
   elements.cameraStage.focus({ preventScroll: true });
   void requestCamera();
@@ -2060,7 +2056,7 @@ function resumeOrRequestCamera() {
     return;
   }
   setGuide(false);
-  setCameraMessage('Kamera wird geöffnet …', 'Bitte einen Moment warten.');
+  setCameraMessage('Kamera wird geöffnet …', 'Bitte das Dokument bereithalten.');
   if (document.visibilityState === 'visible') void requestCamera();
 }
 
@@ -2795,7 +2791,10 @@ document.addEventListener('visibilitychange', () => {
   ) {
     state = 'scanning';
     setGuide(false);
-    setCameraMessage('Kamera wird geöffnet …', 'Bitte einen Moment warten.');
+    setCameraMessage(
+      'Kamera wird geöffnet …',
+      'Bitte das Dokument bereithalten.',
+    );
     void requestCamera();
   }
 });
