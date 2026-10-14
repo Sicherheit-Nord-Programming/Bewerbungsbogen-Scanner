@@ -84,7 +84,7 @@ test('standalone page contains a live camera guide without external code', async
   assert.match(html, /id="countdown"/);
   assert.match(html, /id="rotate-phone"/);
   assert.match(html, /Handy waagerecht drehen/);
-  assert.match(html, /scanner\.js\?v=20261015-camera-instructions-v27/);
+  assert.match(html, /scanner\.js\?v=20261015-dashboard-orientation-v28/);
   assert.match(html, /styles\.css\?v=20261014-passport-landscape-v24/);
   assert.match(html, /<title>Sicherheit Nord · Ausweisscan<\/title>/);
   assert.match(
@@ -408,6 +408,14 @@ test('standalone page contains a live camera guide without external code', async
     script,
     /if \(firstSlot !== 'tax-id'\) void requestLandscapeCameraPresentation\(\)/,
   );
+  assert.match(
+    script,
+    /function unlockScreenOrientation\(\)[\s\S]+?screen\?\.orientation\?\.unlock\?\.\(\)/,
+  );
+  assert.match(
+    script,
+    /function showDashboard\(direction = 'forward'\)[\s\S]+?stopCamera\(\);[\s\S]+?unlockScreenOrientation\(\)/,
+  );
   const openDocumentStart = script.indexOf('function openDocument(documentId)');
   const startDocumentStart = script.indexOf(
     'function startDocument(documentId, pressedCard = null)',
@@ -485,6 +493,10 @@ test('standalone page contains a live camera guide without external code', async
   );
   assert.doesNotMatch(completeSessionSource, /clearCompletedCapturePreviews/);
   assert.match(completeSessionSource, /state = 'dashboard-complete'/);
+  assert.match(
+    completeSessionSource,
+    /if \(returnToDashboard\) \{[\s\S]+?unlockScreenOrientation\(\)/,
+  );
   assert.match(script, /documentSlotLabel\(slot\)/);
   assert.match(script, /event\.key === 'Escape'/);
   assert.match(
@@ -881,6 +893,7 @@ export function torchLifecycleState() {
       'innerWidth',
       'navigator',
       'requestAnimationFrame',
+      'screen',
       'window',
     ].map((name) => [name, Object.getOwnPropertyDescriptor(globalThis, name)]),
   );
@@ -988,6 +1001,8 @@ export function torchLifecycleState() {
   ];
   let getUserMediaCalls = 0;
   let animationFrameCalls = 0;
+  let orientationLockCalls = 0;
+  let orientationUnlockCalls = 0;
   let scanner;
   const documentListeners = new Map();
   const mockDocument = {
@@ -1021,6 +1036,17 @@ export function torchLifecycleState() {
           getUserMediaCalls += 1;
           assert.ok(pending, 'unexpected additional camera request');
           return pending.promise;
+        },
+      },
+    });
+    defineGlobal('screen', {
+      orientation: {
+        async lock(mode) {
+          assert.equal(mode, 'landscape');
+          orientationLockCalls += 1;
+        },
+        unlock() {
+          orientationUnlockCalls += 1;
         },
       },
     });
@@ -1067,8 +1093,19 @@ export function torchLifecycleState() {
     });
     scanner.startDocument('identity-card');
     const firstResult = scanner.cameraLifecycleState().cameraPromise;
+    assert.equal(orientationLockCalls, 1);
     scanner.backToDashboard();
+    assert.equal(
+      orientationUnlockCalls,
+      1,
+      'returning to the overview must release the landscape lock',
+    );
     scanner.startDocument('passport');
+    assert.equal(
+      orientationLockCalls,
+      2,
+      'opening another document must lock the scanner to landscape again',
+    );
     const secondResult = scanner.cameraLifecycleState().cameraPromise;
     assert.ok(firstResult);
     assert.ok(secondResult);
@@ -1124,7 +1161,13 @@ export function torchLifecycleState() {
     assert.equal(thirdStream.track.stopCalls, 1);
 
     scanner.prepareCompletedIdentityDocumentTest();
+    const unlocksBeforeCompletedDocument = orientationUnlockCalls;
     scanner.advanceAfterFinalizedDocumentSlot('id-back');
+    assert.equal(
+      orientationUnlockCalls,
+      unlocksBeforeCompletedDocument + 1,
+      'finishing a document must restore automatic overview rotation',
+    );
     assert.deepEqual(scanner.documentLifecycleState(), {
       state: 'dashboard',
       sessionClosed: false,

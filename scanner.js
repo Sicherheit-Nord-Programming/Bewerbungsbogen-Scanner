@@ -495,8 +495,22 @@ async function requestLandscapeCameraPresentation() {
   }
   try {
     await globalThis.screen?.orientation?.lock?.('landscape');
+    if (
+      generation !== cameraPresentationGeneration &&
+      (sessionClosed || !selectionLocked)
+    ) {
+      unlockScreenOrientation();
+    }
   } catch {
     // iOS and orientation-locked phones may reject this request.
+  }
+}
+
+function unlockScreenOrientation() {
+  try {
+    globalThis.screen?.orientation?.unlock?.();
+  } catch {
+    // The overview still works when a browser manages orientation itself.
   }
 }
 
@@ -1804,6 +1818,7 @@ function renderDashboard() {
 
 function showDashboard(direction = 'forward') {
   stopCamera();
+  unlockScreenOrientation();
   clearTaxIdEntry();
   elements.loading.hidden = true;
   elements.cameraStage.hidden = true;
@@ -2462,6 +2477,7 @@ function completeSession(returnToDashboard = false) {
   elements.fatal.hidden = true;
   elements.app.setAttribute('aria-busy', 'false');
   if (returnToDashboard) {
+    unlockScreenOrientation();
     selectedDocumentIds.clear();
     selectionLocked = false;
     state = 'dashboard-complete';
