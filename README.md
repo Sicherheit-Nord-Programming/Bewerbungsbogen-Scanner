@@ -91,9 +91,12 @@ entsprechen dem verschlüsselten Apps-Script-Relay-Protokoll.
 1. Bei `v=1` wird nach einem gültigen QR-Fragment sofort die rückseitige Kamera
    angefordert. Bei `v=2` erscheint zuerst die Dokumentauswahl. Verweigert der
    Browser den Kamerastart, erscheint ein Fallback-Button.
-2. Das Handy wird waagerecht gehalten; Karten liegen quer in einem großen,
-   abgerundeten Scanrahmen. Der Reisepass bleibt hochkant. Leicht schräge
-   Platzierung und kurzes Handzittern setzen den Countdown nicht sofort zurück.
+2. Das Handy wird waagerecht gehalten. Solange es hochkant steht, pausieren
+   Erkennung und Countdown und die Seite fordert zum Drehen auf. Nach dem
+   Drehen läuft die Erkennung automatisch weiter. Karten liegen quer in einem
+   großen, fast bildschirmhohen Scanrahmen; der Reisepass bleibt als Dokument
+   hochkant. Leicht schräge Platzierung und kurzes Handzittern setzen den
+   Countdown nicht sofort zurück.
 3. Nach drei echten Sekunden stabiler Lage wird der aktuelle Videoframe
    unmittelbar eingefroren. Das Handy vibriert, sofern der Browser dies erlaubt.
 4. Die technische Prüfung entspricht den Desktop-Grenzwerten für Auflösung,

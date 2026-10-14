@@ -23,8 +23,10 @@ test('standalone page contains a live camera guide without external code', async
   assert.match(guideMarkup, /class="corner bottom-right"/);
   assert.doesNotMatch(guideMarkup, /guide-outline|<polygon|<svg/);
   assert.match(html, /id="countdown"/);
-  assert.match(html, /scanner\.js\?v=20261012-classic-guide-v21/);
-  assert.match(html, /styles\.css\?v=20261012-classic-guide-v21/);
+  assert.match(html, /id="rotate-phone"/);
+  assert.match(html, /Handy waagerecht drehen/);
+  assert.match(html, /scanner\.js\?v=20261014-phone-landscape-v22/);
+  assert.match(html, /styles\.css\?v=20261014-phone-landscape-v22/);
   assert.match(html, /<title>Sicherheit Nord · Ausweisscan<\/title>/);
   assert.match(
     html,
@@ -117,6 +119,26 @@ test('standalone page contains a live camera guide without external code', async
   assert.doesNotMatch(html, /<script[^>]+src="https:/);
   assert.match(script, /navigator\.mediaDevices\.getUserMedia/);
   assert.match(script, /Oberkante oben\. Handy waagerecht halten\./);
+  assert.match(script, /function phoneViewportIsLandscape\(\)/);
+  assert.match(script, /window\.visualViewport/);
+  assert.match(script, /function updatePhoneOrientation\(\)/);
+  assert.match(
+    script,
+    /function resumeAnalysisWhenCameraReady\(\)[\s\S]+?readyState >= 2[\s\S]+?orientationResumeFrame = requestAnimationFrame\(resume\)/,
+  );
+  assert.match(
+    script,
+    /function stopCamera\(\)[\s\S]+?cancelAnimationFrame\(orientationResumeFrame\)/,
+  );
+  assert.match(script, /Handy waagerecht drehen\./);
+  assert.match(
+    script,
+    /window\.addEventListener\('orientationchange', schedulePhoneOrientationRefresh\)/,
+  );
+  assert.match(
+    script,
+    /window\.visualViewport\?\.addEventListener\([\s\S]+?'resize',[\s\S]+?schedulePhoneOrientationRefresh/,
+  );
   assert.doesNotMatch(script, /Oberkante nach rechts|Oberkante nach links/);
   assert.match(script, /facingMode: \{ ideal: 'environment' \}/);
   assert.doesNotMatch(script, /\bzoom\b/i);
@@ -185,8 +207,8 @@ test('standalone page contains a live camera guide without external code', async
   );
   assert.match(script, /prepareEncryptedCapture/);
   assert.match(script, /protocolVersion,/);
-  assert.match(script, /scanner-core\.js\?v=20261012-classic-guide-v21/);
-  assert.match(script, /relay-client\.js\?v=20261012-classic-guide-v21/);
+  assert.match(script, /scanner-core\.js\?v=20261014-phone-landscape-v22/);
+  assert.match(script, /relay-client\.js\?v=20261014-phone-landscape-v22/);
   assert.match(script, /callRelayWithRecovery\(/);
   assert.match(script, /'claim'[\s\S]+?shouldContinue: \(\) => !sessionClosed/);
   assert.match(script, /elements\.documentFinish\.hidden = false/);
@@ -245,6 +267,10 @@ test('standalone page contains a live camera guide without external code', async
   assert.match(
     script,
     /function startDocument\(documentId, pressedCard = null\)[\s\S]+?selectedDocumentIds\.add\(documentId\)[\s\S]+?classList\.add\('is-activating'\)[\s\S]+?requestAnimationFrame\(\(\) => \{[\s\S]+?requestAnimationFrame\(\(\) => \{[\s\S]+?openDocument\(documentId\)/,
+  );
+  assert.match(
+    script,
+    /if \(firstSlot !== 'tax-id'\) void requestLandscapeCameraPresentation\(\)/,
   );
   const openDocumentStart = script.indexOf('function openDocument(documentId)');
   const startDocumentStart = script.indexOf(
@@ -441,7 +467,7 @@ test('standalone page contains a live camera guide without external code', async
   assert.doesNotMatch(startCameraRule, /top:\s*62%/);
   const guideRule = styles.match(/\.id-guide\s*\{([\s\S]*?)\}/)?.[1];
   assert.ok(guideRule);
-  assert.match(guideRule, /width:\s*min\(94vw,\s*116dvh,\s*720px\)/);
+  assert.match(guideRule, /width:\s*min\(94dvw,\s*140dvh,\s*1100px\)/);
   assert.match(guideRule, /top:\s*49%/);
   assert.doesNotMatch(guideRule, /aspect-ratio:\s*53\.98\s*\/\s*85\.6/);
   const orientationRule = styles.match(
@@ -478,7 +504,16 @@ test('standalone page contains a live camera guide without external code', async
   );
   assert.match(
     styles,
-    /@media \(orientation: landscape\)[\s\S]+?\.id-guide\s*\{[\s\S]+?width:\s*min\(94vw,\s*116dvh,\s*720px\)[\s\S]+?\.preview-frame\s*\{[\s\S]+?width:\s*min\(74vw,\s*70dvh,\s*380px\)/,
+    /@media \(orientation: landscape\)[\s\S]+?\.id-guide\s*\{[\s\S]+?width:\s*min\(94dvw,\s*140dvh,\s*1100px\)[\s\S]+?\.preview-frame\s*\{[\s\S]+?width:\s*min\(74vw,\s*70dvh,\s*380px\)/,
+  );
+  assert.match(
+    styles,
+    /\.camera-stage\.needs-landscape \.id-guide,[\s\S]+?visibility:\s*hidden;[\s\S]+?opacity:\s*0/,
+  );
+  assert.match(styles, /\.rotate-phone\s*\{[\s\S]+?top:\s*50%/);
+  assert.match(
+    styles,
+    /@media \(orientation: landscape\)[\s\S]+?\.camera-copy\s*\{[\s\S]+?left:\s*calc\(50% \+ min\(47dvw,\s*70dvh,\s*550px\) \+ 8px\)[\s\S]+?transform:\s*translateY\(-50%\)/,
   );
 });
 
@@ -523,11 +558,11 @@ test('a dashboard return detaches an in-flight camera request from the next docu
   const source = await readFile(scannerUrl, 'utf8');
   const instrumentedSource = source
     .replace(
-      "from './scanner-core.js?v=20261012-classic-guide-v21';",
+      "from './scanner-core.js?v=20261014-phone-landscape-v22';",
       `from ${JSON.stringify(scannerCoreUrl)};`,
     )
     .replace(
-      "from './relay-client.js?v=20261012-classic-guide-v21';",
+      "from './relay-client.js?v=20261014-phone-landscape-v22';",
       `from ${JSON.stringify(relayClientUrl)};`,
     )
     .replace(
@@ -536,12 +571,30 @@ test('a dashboard return detaches an in-flight camera request from the next docu
 export {
   advanceAfterFinalizedDocumentSlot,
   backToDashboard,
+  phoneViewportIsLandscape,
   requestCamera,
   resetTorchState,
   setTorch,
   startDocument,
   stopCamera,
+  updatePhoneOrientation,
 };
+export function prepareOrientationLifecycleTest() {
+  sessionClaimed = true;
+  sessionClosed = false;
+  state = 'scanning';
+  elements.cameraStage.hidden = false;
+  elements.countdown.textContent = '3';
+  clearLandscapeRequirement();
+}
+export function orientationLifecycleState() {
+  return {
+    landscape: phoneViewportIsLandscape(),
+    needsLandscape: elements.cameraStage.classList.contains('needs-landscape'),
+    promptHidden: elements.rotatePhone.hidden,
+    countdown: elements.countdown.textContent,
+  };
+}
 export function prepareDashboardLifecycleTest() {
   protocolVersion = '2';
   captureMode = 'documents-v2';
@@ -779,8 +832,8 @@ export function torchLifecycleState() {
       animationFrameCalls += 1;
       return animationFrameCalls;
     });
-    defineGlobal('innerHeight', 844);
-    defineGlobal('innerWidth', 390);
+    defineGlobal('innerHeight', 390);
+    defineGlobal('innerWidth', 844);
     defineGlobal('HTMLButtonElement', class {});
     defineGlobal('document', mockDocument);
     defineGlobal('window', {
@@ -805,6 +858,27 @@ export function torchLifecycleState() {
     );
     const firstStream = createStream();
     const secondStream = createStream();
+
+    scanner.prepareOrientationLifecycleTest();
+    assert.equal(scanner.phoneViewportIsLandscape(), true);
+    defineGlobal('innerHeight', 844);
+    defineGlobal('innerWidth', 390);
+    assert.equal(scanner.updatePhoneOrientation(), false);
+    assert.deepEqual(scanner.orientationLifecycleState(), {
+      landscape: false,
+      needsLandscape: true,
+      promptHidden: false,
+      countdown: '',
+    });
+    defineGlobal('innerHeight', 390);
+    defineGlobal('innerWidth', 844);
+    assert.equal(scanner.updatePhoneOrientation(), true);
+    assert.deepEqual(scanner.orientationLifecycleState(), {
+      landscape: true,
+      needsLandscape: false,
+      promptHidden: true,
+      countdown: '',
+    });
 
     scanner.prepareDashboardLifecycleTest();
     assert.deepEqual(scanner.documentLifecycleState(), {

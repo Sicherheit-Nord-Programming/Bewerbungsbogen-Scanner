@@ -24,10 +24,10 @@
     />
     <title>Sicherheit Nord · Ausweisscan</title>
     <script src="./legacy-redirect.js?v=20261010-tax-id-start-v16"></script>
-    <link rel="stylesheet" href="./styles.css?v=20261012-classic-guide-v21" />
+    <link rel="stylesheet" href="./styles.css?v=20261014-phone-landscape-v22" />
     <script
       type="module"
-      src="./scanner.js?v=20261012-classic-guide-v21"
+      src="./scanner.js?v=20261014-phone-landscape-v22"
     ></script>
   </head>
   <body>
@@ -231,6 +231,15 @@
       >
         <video id="camera" autoplay muted playsinline></video>
         <div class="shade" aria-hidden="true"></div>
+        <div
+          id="rotate-phone"
+          class="rotate-phone"
+          role="status"
+          aria-live="polite"
+          hidden
+        >
+          Handy waagerecht drehen
+        </div>
         <button
           id="back-to-dashboard"
           class="camera-action back-to-dashboard"

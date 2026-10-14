@@ -594,14 +594,46 @@ button {
   pointer-events: none;
 }
 
+.rotate-phone {
+  position: absolute;
+  z-index: 9;
+  top: 50%;
+  left: 50%;
+  width: max-content;
+  max-width: calc(100vw - 40px);
+  padding: 14px 18px;
+  transform: translate(-50%, -50%);
+  border: 1px solid rgba(255, 255, 255, 0.42);
+  border-radius: 16px;
+  color: #fff;
+  background: rgba(4, 10, 15, 0.86);
+  box-shadow: 0 10px 34px rgba(0, 0, 0, 0.35);
+  font-size: clamp(1rem, 4.6vw, 1.25rem);
+  font-weight: 820;
+  text-align: center;
+  backdrop-filter: blur(10px);
+  pointer-events: none;
+}
+
+.camera-stage.needs-landscape .shade {
+  background: rgba(0, 0, 0, 0.58);
+}
+
+.camera-stage.needs-landscape .id-guide,
+.camera-stage.needs-landscape .countdown,
+.camera-stage.needs-landscape .camera-copy {
+  visibility: hidden;
+  opacity: 0;
+}
+
 .id-guide {
   --guide-color: #f04450;
   position: absolute;
   z-index: 3;
   left: 50%;
   top: 49%;
-  width: min(94vw, 116vh, 720px);
-  width: min(94vw, 116dvh, 720px);
+  width: min(94vw, 140vh, 1100px);
+  width: min(94dvw, 140dvh, 1100px);
   aspect-ratio: 85.6 / 53.98;
   transform: translate(-50%, -50%);
   border: 3px solid color-mix(in srgb, var(--guide-color) 62%, transparent);
@@ -611,7 +643,8 @@ button {
     0 0 24px color-mix(in srgb, var(--guide-color) 38%, transparent);
   transition:
     border-color 140ms ease,
-    box-shadow 140ms ease;
+    box-shadow 140ms ease,
+    opacity 140ms ease;
   pointer-events: none;
 }
 
@@ -711,6 +744,7 @@ button {
   color: #fff;
   text-shadow: 0 3px 20px rgba(0, 0, 0, 0.82);
   pointer-events: none;
+  transition: opacity 140ms ease;
 }
 
 .camera-copy {
@@ -721,6 +755,7 @@ button {
   bottom: max(28px, calc(env(safe-area-inset-bottom) + 18px));
   text-align: center;
   text-shadow: 0 2px 8px rgba(0, 0, 0, 0.9);
+  transition: opacity 140ms ease;
 }
 
 .side-label {
@@ -957,12 +992,14 @@ button {
 
 @media (orientation: landscape) and (max-height: 620px) {
   .id-guide {
-    top: 49%;
+    top: 50%;
+    width: min(94vw, 140vh, 1100px);
+    width: min(94dvw, 140dvh, 1100px);
   }
 
-  .id-guide {
-    width: min(94vw, 116vh, 720px);
-    width: min(94vw, 116dvh, 720px);
+  .id-guide.is-passport {
+    width: min(58vw, 62vh, 520px);
+    width: min(58dvw, 62dvh, 520px);
   }
 
   .preview-frame {
@@ -971,14 +1008,30 @@ button {
   }
 
   .countdown {
-    top: 49%;
+    top: 50%;
   }
 
   .camera-copy {
-    left: auto;
-    width: 28vw;
-    bottom: 42px;
-    text-align: right;
+    top: 50%;
+    right: max(8px, env(safe-area-inset-right));
+    bottom: auto;
+    left: calc(50% + min(47vw, 70vh, 550px) + 8px);
+    left: calc(50% + min(47dvw, 70dvh, 550px) + 8px);
+    width: auto;
+    transform: translateY(-50%);
+    text-align: center;
+  }
+
+  .side-label {
+    display: none;
+  }
+
+  .camera-status {
+    margin: 0;
+    font-size: clamp(0.58rem, 1.65vw, 0.76rem);
+    line-height: 1.2;
+    hyphens: auto;
+    overflow-wrap: anywhere;
   }
 }
 

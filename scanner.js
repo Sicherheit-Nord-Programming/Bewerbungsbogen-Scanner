@@ -20,7 +20,7 @@ import {
   portraitCaptureLayout,
   scannerDocumentsForVersion,
   updateHoldState,
-} from './scanner-core.js?v=20261012-classic-guide-v21';
+} from './scanner-core.js?v=20261014-phone-landscape-v22';
 import {
   callRelayWithRecovery,
   createPhoneSession,
@@ -32,7 +32,7 @@ import {
   RelayError,
   uploadChunksConcurrently,
   waitForStaticSession,
-} from './relay-client.js?v=20261012-classic-guide-v21';
+} from './relay-client.js?v=20261014-phone-landscape-v22';
 
 const MAX_FINALIZE_ATTEMPTS = 5;
 const LIVE_ANALYSIS_INTERVAL_MS = 145;
@@ -80,6 +80,7 @@ const elements = Object.fromEntries(
     'tax-id-photo-input',
     'camera-stage',
     'camera',
+    'rotate-phone',
     'id-guide',
     'countdown',
     'side-label',
@@ -143,6 +144,9 @@ let pendingConfirm = false;
 let busy = false;
 let expiryTimer = 0;
 let captureFeedbackTimer = 0;
+let orientationRefreshFrame = 0;
+let orientationResumeFrame = 0;
+let cameraPresentationGeneration = 0;
 let documentOpenPending = false;
 let activeViewAnimation = null;
 let activeViewAnimationTarget = null;
@@ -242,6 +246,112 @@ function setGuide(valid) {
   elements.idGuide.classList.remove('is-capture');
   elements.idGuide.classList.toggle('is-green', valid);
   elements.idGuide.classList.toggle('is-red', !valid);
+}
+
+function phoneViewportIsLandscape() {
+  const viewport = window.visualViewport;
+  const width = Number(viewport?.width) || Number(globalThis.innerWidth) || 0;
+  const height =
+    Number(viewport?.height) || Number(globalThis.innerHeight) || 0;
+  return width > height;
+}
+
+function clearLandscapeRequirement() {
+  elements.cameraStage.classList.remove('needs-landscape');
+  elements.rotatePhone.hidden = true;
+}
+
+function updatePhoneOrientation() {
+  const needsLandscape =
+    !elements.cameraStage.hidden &&
+    state === 'scanning' &&
+    !phoneViewportIsLandscape();
+  elements.cameraStage.classList.toggle('needs-landscape', needsLandscape);
+  elements.rotatePhone.hidden = !needsLandscape;
+  if (!needsLandscape) return true;
+
+  stopAnalysis();
+  holdState = createHoldState();
+  lastPositionedBox = null;
+  lastAnalysisAt = 0;
+  setGuide(false);
+  elements.countdown.textContent = '';
+  setCameraMessage(activeProfile().instruction, 'Handy waagerecht drehen.');
+  return false;
+}
+
+function schedulePhoneOrientationRefresh() {
+  cancelAnimationFrame(orientationRefreshFrame);
+  orientationRefreshFrame = requestAnimationFrame(() => {
+    orientationRefreshFrame = requestAnimationFrame(() => {
+      orientationRefreshFrame = 0;
+      if (
+        sessionClosed ||
+        state !== 'scanning' ||
+        elements.cameraStage.hidden
+      ) {
+        return;
+      }
+      stopAnalysis();
+      holdState = createHoldState();
+      lastPositionedBox = null;
+      lastAnalysisAt = 0;
+      setGuide(false);
+      resumeAnalysisWhenCameraReady();
+    });
+  });
+}
+
+function resumeAnalysisWhenCameraReady() {
+  cancelAnimationFrame(orientationResumeFrame);
+  orientationResumeFrame = 0;
+  const resume = () => {
+    orientationResumeFrame = 0;
+    if (
+      sessionClosed ||
+      state !== 'scanning' ||
+      elements.cameraStage.hidden ||
+      !updatePhoneOrientation() ||
+      !sessionClaimed ||
+      !mediaStream
+    ) {
+      return;
+    }
+    if (elements.camera.readyState >= 2) {
+      beginAnalysis();
+      return;
+    }
+    orientationResumeFrame = requestAnimationFrame(resume);
+  };
+  resume();
+}
+
+async function requestLandscapeCameraPresentation() {
+  const generation = ++cameraPresentationGeneration;
+  try {
+    if (
+      !document.fullscreenElement &&
+      typeof document.documentElement?.requestFullscreen === 'function'
+    ) {
+      await document.documentElement.requestFullscreen({
+        navigationUI: 'hide',
+      });
+    }
+  } catch {
+    // Fullscreen is best effort; the landscape gate below remains reliable.
+  }
+  if (
+    generation !== cameraPresentationGeneration ||
+    sessionClosed ||
+    !selectionLocked
+  ) {
+    return;
+  }
+  try {
+    await globalThis.screen?.orientation?.lock?.('landscape');
+  } catch {
+    // iOS and orientation-locked phones may reject this request.
+  }
 }
 
 function setProgress(percent) {
@@ -433,6 +543,12 @@ function releaseCameraStream(stream, request) {
 
 function stopCamera() {
   stopAnalysis();
+  cameraPresentationGeneration += 1;
+  cancelAnimationFrame(orientationRefreshFrame);
+  orientationRefreshFrame = 0;
+  cancelAnimationFrame(orientationResumeFrame);
+  orientationResumeFrame = 0;
+  clearLandscapeRequirement();
   cameraGeneration += 1;
   cameraRequest = null;
   const stream = mediaStream;
@@ -708,7 +824,8 @@ async function requestCamera() {
           ? guideOrientationStatus()
           : 'Sichere Sitzung wird vorbereitet …',
       );
-      if (sessionClaimed) beginAnalysis();
+      const landscapeReady = updatePhoneOrientation();
+      if (sessionClaimed && landscapeReady) beginAnalysis();
       return true;
     } catch (error) {
       releaseCameraStream(stream, request);
@@ -786,6 +903,7 @@ function beginAnalysis() {
   lastAnalysisAt = 0;
   setGuide(false);
   applyProfileVisuals();
+  if (!updatePhoneOrientation()) return;
   setCameraMessage(activeProfile().instruction, guideOrientationStatus());
   const generation = analysisGeneration;
   const loop = (timestamp) => {
@@ -1512,16 +1630,15 @@ function startDocument(documentId, pressedCard = null) {
   const documentDefinition = availableDocuments().find(
     (candidate) => candidate.id === documentId,
   );
-  if (
-    !documentDefinition ||
-    !nextDocumentSlot(documentDefinition, completedSlots)
-  ) {
-    return;
-  }
+  const firstSlot = documentDefinition
+    ? nextDocumentSlot(documentDefinition, completedSlots)
+    : null;
+  if (!documentDefinition || !firstSlot) return;
   selectedDocumentIds.clear();
   selectedDocumentIds.add(documentId);
   selectionLocked = true;
   renderDashboard();
+  if (firstSlot !== 'tax-id') void requestLandscapeCameraPresentation();
   if (
     pressedCard &&
     typeof requestAnimationFrame === 'function' &&
@@ -1592,11 +1709,11 @@ function resumeSelectedDocumentAfterClaim() {
 
 function resumeOrRequestCamera() {
   if (sessionClosed) return;
+  state = 'scanning';
   if (mediaStream) {
-    beginAnalysis();
+    if (updatePhoneOrientation()) beginAnalysis();
     return;
   }
-  state = 'scanning';
   setGuide(false);
   setCameraMessage('Kamera wird geöffnet …', 'Bitte einen Moment warten.');
   if (document.visibilityState === 'visible') void requestCamera();
@@ -2314,6 +2431,12 @@ document.addEventListener('keyup', (event) => {
   if (event.key === ' ') endButtonPress(true);
 });
 window.addEventListener('blur', () => endButtonPress(false));
+window.addEventListener('resize', schedulePhoneOrientationRefresh);
+window.addEventListener('orientationchange', schedulePhoneOrientationRefresh);
+window.visualViewport?.addEventListener(
+  'resize',
+  schedulePhoneOrientationRefresh,
+);
 window.addEventListener('pagehide', disposeSensitiveState, { once: true });
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden') {
