@@ -67,6 +67,10 @@ test('standalone page contains a live camera guide without external code', async
   ]);
   assert.match(html, /<video[^>]+autoplay[^>]+muted[^>]+playsinline/);
   assert.match(html, /id="id-guide"/);
+  assert.match(
+    html,
+    /<link rel="icon" type="image\/png" href="\.\/sicherheit-nord-logo\.png" \/>/,
+  );
   const guideMarkup = html.match(
     /<div id="id-guide"[^>]*>([\s\S]*?)<\/div>/,
   )?.[1];
