@@ -3,6 +3,7 @@ import { test } from 'node:test';
 
 import {
   analyzeCaptureQuality,
+  analyzeDocumentPresence,
   analyzeFramePosition,
   canCompleteDocumentSession,
   coverSourceRect,
@@ -87,6 +88,196 @@ function frameFixture({
       data[offset + 2] = value;
       data[offset + 3] = 255;
     }
+  }
+  return { data, width, height };
+}
+
+function plausibleDocumentFixture({
+  width = 480,
+  height = 640,
+  card = { x: 35, y: 201, width: 410, height: 259 },
+  backgroundValue = 35,
+  cardValue = 205,
+  textValue = 48,
+} = {}) {
+  const data = new Uint8ClampedArray(width * height * 4);
+  const setPixel = (x, y, value) => {
+    if (x < 0 || x >= width || y < 0 || y >= height) return;
+    const offset = (y * width + x) * 4;
+    data[offset] = value;
+    data[offset + 1] = value;
+    data[offset + 2] = value;
+    data[offset + 3] = 255;
+  };
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const inside =
+        x >= card.x &&
+        x < card.x + card.width &&
+        y >= card.y &&
+        y < card.y + card.height;
+      setPixel(x, y, inside ? cardValue : backgroundValue);
+    }
+  }
+
+  const portrait = {
+    x: Math.round(card.x + card.width * 0.07),
+    y: Math.round(card.y + card.height * 0.17),
+    width: Math.round(card.width * 0.23),
+    height: Math.round(card.height * 0.62),
+  };
+  for (let y = portrait.y; y < portrait.y + portrait.height; y += 1) {
+    for (let x = portrait.x; x < portrait.x + portrait.width; x += 1) {
+      const tone = 92 + ((x * 7 + y * 5) % 46);
+      setPixel(x, y, tone);
+    }
+  }
+
+  const glyphWidth = Math.max(5, Math.round(card.width * 0.013));
+  const glyphHeight = Math.max(9, Math.round(card.height * 0.038));
+  const lineStartX = Math.round(card.x + card.width * 0.38);
+  const lineFractions = [0.13, 0.235, 0.37, 0.515, 0.655, 0.805];
+  for (let line = 0; line < lineFractions.length; line += 1) {
+    const y = Math.round(card.y + card.height * lineFractions[line]);
+    const glyphs = 6 + (line % 4);
+    let x = lineStartX + (line % 2) * glyphWidth;
+    for (let glyph = 0; glyph < glyphs; glyph += 1) {
+      const widthVariation = glyph % 3 === 0 ? 2 : 0;
+      for (let py = y; py < y + glyphHeight; py += 1) {
+        for (let px = x; px < x + glyphWidth + widthVariation; px += 1) {
+          setPixel(px, py, textValue);
+        }
+      }
+      x += Math.round(card.width * (glyph % 3 === 1 ? 0.066 : 0.049));
+    }
+  }
+  return { data, width, height };
+}
+
+function keyboardFixture({
+  width = 480,
+  height = 640,
+  keyboard = { x: 35, y: 201, width: 410, height: 259 },
+  light = false,
+} = {}) {
+  const data = new Uint8ClampedArray(width * height * 4);
+  const background = light ? 158 : 32;
+  const base = light ? 218 : 58;
+  const key = light ? 238 : 102;
+  const label = light ? 58 : 232;
+  const setPixel = (x, y, value) => {
+    if (x < 0 || x >= width || y < 0 || y >= height) return;
+    const offset = (y * width + x) * 4;
+    data[offset] = value;
+    data[offset + 1] = value;
+    data[offset + 2] = value;
+    data[offset + 3] = 255;
+  };
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) setPixel(x, y, background);
+  }
+  for (let y = keyboard.y; y < keyboard.y + keyboard.height; y += 1) {
+    for (let x = keyboard.x; x < keyboard.x + keyboard.width; x += 1)
+      setPixel(x, y, base);
+  }
+  const columns = 10;
+  const rows = 5;
+  const gap = Math.max(4, Math.round(keyboard.width * 0.012));
+  const keyWidth = Math.floor((keyboard.width - gap * (columns + 1)) / columns);
+  const keyHeight = Math.floor((keyboard.height - gap * (rows + 1)) / rows);
+  for (let row = 0; row < rows; row += 1) {
+    for (let column = 0; column < columns; column += 1) {
+      const x = keyboard.x + gap + column * (keyWidth + gap);
+      const y = keyboard.y + gap + row * (keyHeight + gap);
+      for (let py = y; py < y + keyHeight; py += 1) {
+        for (let px = x; px < x + keyWidth; px += 1) setPixel(px, py, key);
+      }
+      const labelX = x + Math.floor(keyWidth * 0.42);
+      const labelY = y + Math.floor(keyHeight * 0.36);
+      for (let py = labelY; py < labelY + Math.max(3, keyHeight / 5); py += 1) {
+        for (let px = labelX; px < labelX + Math.max(2, keyWidth / 7); px += 1)
+          setPixel(px, py, label);
+      }
+    }
+  }
+  return { data, width, height };
+}
+
+function staggeredKeyboardFixture({
+  width = 480,
+  height = 640,
+  keyboard = { x: 35, y: 201, width: 410, height: 259 },
+  light = true,
+} = {}) {
+  const data = new Uint8ClampedArray(width * height * 4);
+  const background = light ? 145 : 32;
+  const base = light ? 205 : 58;
+  const key = light ? 236 : 102;
+  const label = light ? 50 : 232;
+  const setPixel = (x, y, value) => {
+    if (x < 0 || x >= width || y < 0 || y >= height) return;
+    const offset = (y * width + x) * 4;
+    data[offset] = value;
+    data[offset + 1] = value;
+    data[offset + 2] = value;
+    data[offset + 3] = 255;
+  };
+  const drawKey = (x, y, keyWidth, keyHeight) => {
+    for (let py = y; py < y + keyHeight; py += 1) {
+      for (let px = x; px < x + keyWidth; px += 1) setPixel(px, py, key);
+    }
+    const labelX = x + Math.floor(keyWidth * 0.42);
+    const labelY = y + Math.floor(keyHeight * 0.35);
+    for (let py = labelY; py < labelY + 8; py += 1) {
+      for (let px = labelX; px < labelX + 4; px += 1) setPixel(px, py, label);
+    }
+  };
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) setPixel(x, y, background);
+  }
+  for (let y = keyboard.y; y < keyboard.y + keyboard.height; y += 1) {
+    for (let x = keyboard.x; x < keyboard.x + keyboard.width; x += 1)
+      setPixel(x, y, base);
+  }
+
+  const rows = [
+    { keys: 12, inset: 3 },
+    { keys: 11, inset: 10 },
+    { keys: 10, inset: 18 },
+    { keys: 9, inset: 26 },
+  ];
+  const gap = 5;
+  const keyHeight = 39;
+  for (let row = 0; row < rows.length; row += 1) {
+    const specification = rows[row];
+    const y = keyboard.y + 8 + row * (keyHeight + 10);
+    let x = keyboard.x + specification.inset;
+    const keyWidth = Math.floor(
+      (keyboard.width -
+        specification.inset * 2 -
+        gap * (specification.keys - 1)) /
+        specification.keys,
+    );
+    for (let column = 0; column < specification.keys; column += 1) {
+      drawKey(x, y, keyWidth, keyHeight);
+      x += keyWidth + gap;
+    }
+  }
+
+  const bottomY = keyboard.y + 8 + 4 * (keyHeight + 10);
+  for (const [xOffset, keyWidth] of [
+    [18, 34],
+    [58, 34],
+    [98, 180],
+    [284, 45],
+    [335, 38],
+  ]) {
+    drawKey(
+      keyboard.x + xOffset,
+      bottomY,
+      keyWidth,
+      Math.min(keyHeight, keyboard.y + keyboard.height - 6 - bottomY),
+    );
   }
   return { data, width, height };
 }
@@ -471,11 +662,16 @@ test('selected scan plan completes only after every chosen document is complete'
 test('selected scan plan advances within a document and always returns to the dashboard when it is complete', () => {
   assert.deepEqual(
     nextSelectedPlanStep(['identity-card'], ['id-front'], 'id-front'),
-    { kind: 'capture', slot: 'id-back' },
+    {
+      kind: 'capture',
+      slot: 'id-back',
+    },
   );
   assert.deepEqual(
     nextSelectedPlanStep(['identity-card'], ['id-front', 'id-back'], 'id-back'),
-    { kind: 'dashboard' },
+    {
+      kind: 'dashboard',
+    },
   );
   assert.deepEqual(
     nextSelectedPlanStep(
@@ -495,7 +691,9 @@ test('selected scan plan advances within a document and always returns to the da
   );
   assert.deepEqual(
     nextSelectedPlanStep(['passport'], ['id-front'], 'id-front'),
-    { kind: 'invalid' },
+    {
+      kind: 'invalid',
+    },
   );
 });
 
@@ -608,7 +806,10 @@ test('builds and draws a projective rectification mesh whose affine patches land
     sourceQuad,
     856,
     540,
-    { columns: 3, rows: 2 },
+    {
+      columns: 3,
+      rows: 2,
+    },
   );
   assert.deepEqual(result, { columns: 3, rows: 2, triangleCount: 12 });
   assert.equal(clips, 12);
@@ -731,6 +932,120 @@ test('accepts a mildly perspective ID card and ordinary sideways roll', () => {
     true,
     'ordinary low-light camera noise must not block the green guide',
   );
+});
+
+test('strict live gate accepts a printed document surface and rejects keyboards', () => {
+  const guide = { x: 35, y: 201, width: 410, height: 259 };
+  const document = analyzeFramePosition(
+    plausibleDocumentFixture(),
+    guide,
+    null,
+    {
+      requireDocumentPresence: true,
+      slot: 'id-front',
+    },
+  );
+  assert.equal(document.positioned, true, JSON.stringify(document));
+  assert.equal(document.documentPresent, true);
+  assert.ok(document.documentEdges >= 3);
+  assert.ok(document.texture.textComponents >= 8);
+  assert.ok(document.texture.textBands >= 2);
+  assert.equal(document.texture.gridLike, false);
+
+  for (const light of [true, false]) {
+    const keyboard = analyzeFramePosition(
+      keyboardFixture({ light }),
+      guide,
+      null,
+      {
+        requireDocumentPresence: true,
+        slot: 'id-front',
+      },
+    );
+    assert.equal(
+      keyboard.positioned,
+      false,
+      `${light ? 'light' : 'dark'} keyboard must be rejected: ${JSON.stringify(keyboard)}`,
+    );
+    assert.equal(keyboard.documentPresent, false);
+    assert.match(keyboard.reason, /Kein Dokument erkannt|vollständig/);
+  }
+});
+
+test('frozen-frame document gate rejects a keyboard before feedback or review', () => {
+  const document = analyzeDocumentPresence(plausibleDocumentFixture(), {
+    regionRect: { x: 35, y: 201, width: 410, height: 259 },
+    slot: 'id-front',
+  });
+  assert.equal(document.accepted, true, JSON.stringify(document));
+
+  for (const light of [false, true]) {
+    const keyboard = analyzeDocumentPresence(keyboardFixture({ light }), {
+      regionRect: { x: 35, y: 201, width: 410, height: 259 },
+      slot: 'id-front',
+    });
+    assert.equal(
+      keyboard.accepted,
+      false,
+      `${light ? 'light' : 'dark'} keyboard must fail frozen-frame validation`,
+    );
+    assert.equal(keyboard.status, 'document');
+  }
+
+  for (const light of [true, false]) {
+    const staggered = analyzeDocumentPresence(
+      staggeredKeyboardFixture({ light }),
+      {
+        regionRect: { x: 35, y: 201, width: 410, height: 259 },
+        slot: 'id-front',
+      },
+    );
+    assert.equal(
+      staggered.accepted,
+      false,
+      `${light ? 'light' : 'dark'} staggered keyboard must fail frozen-frame validation`,
+    );
+    if (light) assert.equal(staggered.metrics.staggeredKeyGridLike, true);
+  }
+});
+
+test('strict live gate rejects staggered laptop keys and a wide space bar', () => {
+  const guide = { x: 35, y: 201, width: 410, height: 259 };
+  for (const light of [true, false]) {
+    const keyboard = analyzeFramePosition(
+      staggeredKeyboardFixture({ light }),
+      guide,
+      null,
+      {
+        requireDocumentPresence: true,
+        slot: 'id-front',
+      },
+    );
+    assert.equal(
+      keyboard.positioned,
+      false,
+      `${light ? 'light' : 'dark'} staggered keyboard must not start the countdown`,
+    );
+    assert.equal(keyboard.documentPresent, false);
+    if (light) assert.equal(keyboard.texture.staggeredKeyGridLike, true);
+  }
+});
+
+test('document presence rejects an empty card-shaped surface', () => {
+  const empty = analyzeDocumentPresence(
+    frameFixture({
+      card: { x: 35, y: 201, width: 410, height: 259 },
+      backgroundValue: 35,
+      cardValue: 205,
+      textValue: 205,
+    }),
+    {
+      regionRect: { x: 35, y: 201, width: 410, height: 259 },
+      slot: 'id-front',
+    },
+  );
+  assert.equal(empty.accepted, false);
+  assert.equal(empty.metrics.textComponents, 0);
 });
 
 test('requires three real seconds of stable positioning and tolerates brief jitter', () => {

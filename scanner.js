@@ -1,5 +1,6 @@
 import {
   analyzeCaptureQuality,
+  analyzeDocumentPresence,
   analyzeFramePosition,
   canCompleteDocumentSession,
   coverSourceRect,
@@ -20,7 +21,7 @@ import {
   portraitCaptureLayout,
   scannerDocumentsForVersion,
   updateHoldState,
-} from './scanner-core.js?v=20261014-phone-landscape-v22';
+} from './scanner-core.js?v=20261014-document-presence-v23';
 import {
   callRelayWithRecovery,
   createPhoneSession,
@@ -32,7 +33,7 @@ import {
   RelayError,
   uploadChunksConcurrently,
   waitForStaticSession,
-} from './relay-client.js?v=20261014-phone-landscape-v22';
+} from './relay-client.js?v=20261014-document-presence-v23';
 
 const MAX_FINALIZE_ATTEMPTS = 5;
 const LIVE_ANALYSIS_INTERVAL_MS = 145;
@@ -929,12 +930,20 @@ function beginAnalysis() {
           elements.analysisCanvas.width,
           elements.analysisCanvas.height,
         );
-        const observation = analyzeFramePosition(image, frame.guideRect);
-        image.data.fill(0);
-        holdState = updateHoldState(holdState, observation, timestamp, {
-          width: elements.analysisCanvas.width,
-          height: elements.analysisCanvas.height,
+        const observation = analyzeFramePosition(image, frame.guideRect, null, {
+          requireDocumentPresence: true,
+          slot: side,
         });
+        image.data.fill(0);
+        if (!observation.documentPresent) {
+          holdState = createHoldState();
+          lastPositionedBox = null;
+        } else {
+          holdState = updateHoldState(holdState, observation, timestamp, {
+            width: elements.analysisCanvas.width,
+            height: elements.analysisCanvas.height,
+          });
+        }
         if (observation.positioned) lastPositionedBox = observation.box;
         const visuallyValid = observation.positioned || holdState.holding;
         setGuide(visuallyValid);
@@ -947,14 +956,18 @@ function beginAnalysis() {
           elements.countdown.textContent = holdState.countdown || '';
         } else {
           elements.sideLabel.textContent = sideTitle();
-          elements.cameraStatus.textContent = `${activeProfile().instruction} ${guideOrientationStatus()}`;
+          elements.cameraStatus.textContent = `${observation.reason} ${guideOrientationStatus()}`;
           elements.countdown.textContent = '';
         }
         // `updateHoldState` keeps a short grace window for one noisy camera
         // frame.  Once the three seconds are complete, use the last stable
         // box even if this exact frame briefly failed edge detection; waiting
         // for another positioned frame was the source of late/missed shots.
-        if (holdState.ready && lastPositionedBox) {
+        if (
+          holdState.ready &&
+          observation.documentPresent &&
+          lastPositionedBox
+        ) {
           void captureAutomatically();
           return;
         }
@@ -1250,7 +1263,18 @@ async function produceCapture() {
           }
         : undefined,
     );
-    if (!nativeQuality.accepted) return { quality: nativeQuality };
+    if (!nativeQuality.accepted) {
+      image.data.fill(0);
+      return { quality: nativeQuality };
+    }
+    const documentPresence = analyzeDocumentPresence(image, { slot: side });
+    if (!documentPresence.accepted) {
+      image.data.fill(0);
+      return { quality: documentPresence };
+    }
+    // The frozen camera frame is now accepted. Signal the shutter immediately,
+    // before upscaling, enhancement and JPEG encoding add visible latency.
+    triggerCaptureFeedback();
     image.data.fill(0);
     image = null;
 
@@ -1724,9 +1748,6 @@ async function captureAutomatically() {
   state = 'capturing';
   stopAnalysis();
   setGuide(true);
-  // This happens synchronously at the end of the countdown, before any
-  // autofocus, decoding, quality analysis, or relay work can add latency.
-  triggerCaptureFeedback();
   elements.countdown.textContent = '';
   setCameraMessage(
     'Aufnahme wird erstellt …',

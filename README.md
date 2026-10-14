@@ -97,18 +97,25 @@ entsprechen dem verschlüsselten Apps-Script-Relay-Protokoll.
    großen, fast bildschirmhohen Scanrahmen; der Reisepass bleibt als Dokument
    hochkant. Leicht schräge Platzierung und kurzes Handzittern setzen den
    Countdown nicht sofort zurück.
-3. Nach drei echten Sekunden stabiler Lage wird der aktuelle Videoframe
-   unmittelbar eingefroren. Das Handy vibriert, sofern der Browser dies erlaubt.
-4. Die technische Prüfung entspricht den Desktop-Grenzwerten für Auflösung,
-   Helligkeit, Kontrast, Laplace-Schärfe, Clipping und lokale Spiegelung.
-5. Abgelehnte Aufnahmen starten automatisch neu. Angenommene Aufnahmen werden
+3. Der Countdown beginnt erst, wenn eine zusammenhängende Dokumentkante und
+   eine für bedruckte Ausweise oder Pässe plausible Binnenstruktur erkannt
+   werden. Regelmäßige zweidimensionale Raster wie eine Computertastatur sowie
+   leere Kartenflächen werden abgewiesen.
+4. Nach drei echten Sekunden stabiler Lage wird der aktuelle Videoframe
+   unmittelbar eingefroren und unabhängig erneut geprüft. Erst nach dieser
+   zweiten Prüfung vibriert das Handy, sofern der Browser dies erlaubt.
+5. Die technische Prüfung entspricht den Desktop-Grenzwerten für Auflösung,
+   Helligkeit, Kontrast, Laplace-Schärfe, Clipping und lokale Spiegelung. Die
+   Dokumentprüfung ist eine lokale Plausibilitätsprüfung und keine Echtheits-
+   oder Gültigkeitsprüfung.
+6. Abgelehnte Aufnahmen starten automatisch neu. Angenommene Aufnahmen werden
    konservativ zugeschnitten und farblich optimiert. Es findet weder OCR noch
    generatives Rekonstruieren unlesbarer Schrift statt.
-6. Vor der verschlüsselten Übertragung bestätigt der Nutzer die sichtbare
+7. Vor der verschlüsselten Übertragung bestätigt der Nutzer die sichtbare
    Vorschau. Bei zweiseitigen Dokumenten folgt automatisch die Rückseite. Sind
    weitere Dokumente ausgewählt, führt der Abschluss eines Dokuments zurück
    zur Dokumentauswahl. Nach dem letzten Dokument wird automatisch bestätigt.
-7. Unterstützt der Kameratreiber `MediaTrackCapabilities.torch`, erscheint im
+8. Unterstützt der Kameratreiber `MediaTrackCapabilities.torch`, erscheint im
    Kamerabild ein Schalter für das Dauerlicht. Beim Verlassen, bei Fehlern und
    beim Stoppen der Kamera wird der Zustand zurückgesetzt.
 

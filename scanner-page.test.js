@@ -25,8 +25,8 @@ test('standalone page contains a live camera guide without external code', async
   assert.match(html, /id="countdown"/);
   assert.match(html, /id="rotate-phone"/);
   assert.match(html, /Handy waagerecht drehen/);
-  assert.match(html, /scanner\.js\?v=20261014-phone-landscape-v22/);
-  assert.match(html, /styles\.css\?v=20261014-phone-landscape-v22/);
+  assert.match(html, /scanner\.js\?v=20261014-document-presence-v23/);
+  assert.match(html, /styles\.css\?v=20261014-document-presence-v23/);
   assert.match(html, /<title>Sicherheit Nord · Ausweisscan<\/title>/);
   assert.match(
     html,
@@ -151,8 +151,39 @@ test('standalone page contains a live camera guide without external code', async
   assert.match(script, /capabilities\?\.torch === true/);
   assert.match(script, /advanced: \[\{ torch: requested \}\]/);
   assert.match(script, /activeVideoTrack[\s\S]+?torch: false/);
-  assert.match(script, /holdState\.ready && lastPositionedBox/);
+  assert.match(
+    script,
+    /holdState\.ready &&[\s\S]+?observation\.documentPresent &&[\s\S]+?lastPositionedBox/,
+  );
+  assert.match(
+    script,
+    /analyzeFramePosition\(image, frame\.guideRect, null, \{[\s\S]+?requireDocumentPresence: true,[\s\S]+?slot: side/,
+  );
+  assert.match(
+    script,
+    /if \(!observation\.documentPresent\) \{[\s\S]+?holdState = createHoldState\(\);[\s\S]+?lastPositionedBox = null/,
+  );
+  assert.match(script, /analyzeDocumentPresence\(image, \{ slot: side \}\)/);
   assert.match(script, /triggerCaptureFeedback\(\)/);
+  const capturePreparation = script.indexOf('async function produceCapture');
+  const frozenGate = script.indexOf(
+    'if (!documentPresence.accepted)',
+    capturePreparation,
+  );
+  const captureFeedback = script.indexOf(
+    'triggerCaptureFeedback();',
+    capturePreparation,
+  );
+  const jpegEncoding = script.indexOf(
+    'canvasToJpeg(canvas)',
+    capturePreparation,
+  );
+  assert.ok(
+    frozenGate >= 0 &&
+      captureFeedback > frozenGate &&
+      jpegEncoding > captureFeedback,
+    'feedback must happen after frozen-frame validation but before JPEG encoding',
+  );
   assert.match(script, /const still = captureVideoFrame\(\)/);
   assert.match(script, /guideCropInSource\(/);
   assert.equal(
@@ -190,7 +221,6 @@ test('standalone page contains a live camera guide without external code', async
     script,
     /if \(portraitGuide\)[\s\S]+?drawPortraitCropAsLandscape/,
   );
-  assert.match(script, /analyzeFramePosition\(image, frame\.guideRect\)/);
   assert.doesNotMatch(
     script,
     /guideQuadInRect|guideQuadInSource|drawPerspectiveQuadAsRectangle/,
@@ -207,8 +237,8 @@ test('standalone page contains a live camera guide without external code', async
   );
   assert.match(script, /prepareEncryptedCapture/);
   assert.match(script, /protocolVersion,/);
-  assert.match(script, /scanner-core\.js\?v=20261014-phone-landscape-v22/);
-  assert.match(script, /relay-client\.js\?v=20261014-phone-landscape-v22/);
+  assert.match(script, /scanner-core\.js\?v=20261014-document-presence-v23/);
+  assert.match(script, /relay-client\.js\?v=20261014-document-presence-v23/);
   assert.match(script, /callRelayWithRecovery\(/);
   assert.match(script, /'claim'[\s\S]+?shouldContinue: \(\) => !sessionClosed/);
   assert.match(script, /elements\.documentFinish\.hidden = false/);
@@ -558,11 +588,11 @@ test('a dashboard return detaches an in-flight camera request from the next docu
   const source = await readFile(scannerUrl, 'utf8');
   const instrumentedSource = source
     .replace(
-      "from './scanner-core.js?v=20261014-phone-landscape-v22';",
+      "from './scanner-core.js?v=20261014-document-presence-v23';",
       `from ${JSON.stringify(scannerCoreUrl)};`,
     )
     .replace(
-      "from './relay-client.js?v=20261014-phone-landscape-v22';",
+      "from './relay-client.js?v=20261014-document-presence-v23';",
       `from ${JSON.stringify(relayClientUrl)};`,
     )
     .replace(

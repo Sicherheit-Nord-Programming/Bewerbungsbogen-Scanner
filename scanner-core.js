@@ -609,7 +609,15 @@ function searchSegmentEdge(gray, start, end, normalTolerance) {
   const normalY = deltaX / length;
   const sampleCount = Math.max(12, Math.floor(length / 2));
   const offsetStep = Math.max(1, Math.floor(normalTolerance / 18));
-  let best = { offset: 0, score: 0, coverage: 0 };
+  let best = {
+    offset: 0,
+    score: 0,
+    coverage: 0,
+    longestRunCoverage: 0,
+    signedContrast: 0,
+    polarityAgreement: 0,
+  };
+  const candidates = [];
 
   for (
     let offset = -normalTolerance;
@@ -619,6 +627,11 @@ function searchSegmentEdge(gray, start, end, normalTolerance) {
     let energy = 0;
     let covered = 0;
     let samples = 0;
+    let signedEnergy = 0;
+    let positive = 0;
+    let negative = 0;
+    let currentRun = 0;
+    let longestRun = 0;
     for (let sample = 1; sample < sampleCount; sample += 1) {
       const progress = sample / sampleCount;
       const x = start.x + deltaX * progress + normalX * offset;
@@ -639,19 +652,486 @@ function searchSegmentEdge(gray, start, end, normalTolerance) {
       ) {
         continue;
       }
-      const gradient = Math.abs(
+      const signedGradient =
         gray.data[afterY * gray.width + afterX] -
-          gray.data[beforeY * gray.width + beforeX],
-      );
+        gray.data[beforeY * gray.width + beforeX];
+      const gradient = Math.abs(signedGradient);
       energy += gradient;
-      if (gradient >= 14) covered += 1;
+      signedEnergy += signedGradient;
+      if (gradient >= 14) {
+        covered += 1;
+        currentRun += 1;
+        longestRun = Math.max(longestRun, currentRun);
+        if (signedGradient >= 0) positive += 1;
+        else negative += 1;
+      } else {
+        currentRun = 0;
+      }
       samples += 1;
     }
     const coverage = covered / Math.max(1, samples);
     const score = energy / Math.max(1, samples) + coverage * 18;
-    if (score > best.score) best = { offset, score, coverage };
+    const candidate = {
+      offset,
+      score,
+      coverage,
+      longestRunCoverage: longestRun / Math.max(1, samples),
+      signedContrast: signedEnergy / Math.max(1, samples),
+      polarityAgreement:
+        covered > 0 ? Math.max(positive, negative) / covered : 0,
+    };
+    candidates.push(candidate);
+    if (score > best.score) best = candidate;
   }
-  return best;
+  const runnerUp = candidates
+    .filter(
+      (candidate) =>
+        Math.abs(candidate.offset - best.offset) >
+        Math.max(2, normalTolerance * 0.08),
+    )
+    .reduce((highest, candidate) => Math.max(highest, candidate.score), 0);
+  return {
+    ...best,
+    peakMargin: best.score - runnerUp,
+    peakDominance: best.score / Math.max(1, runnerUp),
+  };
+}
+
+function shiftedLine(start, end, offset) {
+  const deltaX = end.x - start.x;
+  const deltaY = end.y - start.y;
+  const length = Math.hypot(deltaX, deltaY);
+  const normalX = -deltaY / length;
+  const normalY = deltaX / length;
+  return {
+    start: {
+      x: start.x + normalX * offset,
+      y: start.y + normalY * offset,
+    },
+    end: {
+      x: end.x + normalX * offset,
+      y: end.y + normalY * offset,
+    },
+  };
+}
+
+function lineIntersection(first, second) {
+  const firstX = first.end.x - first.start.x;
+  const firstY = first.end.y - first.start.y;
+  const secondX = second.end.x - second.start.x;
+  const secondY = second.end.y - second.start.y;
+  const determinant = firstX * secondY - firstY * secondX;
+  if (Math.abs(determinant) <= 1e-8) return null;
+  const relativeX = second.start.x - first.start.x;
+  const relativeY = second.start.y - first.start.y;
+  const progress = (relativeX * secondY - relativeY * secondX) / determinant;
+  return {
+    x: first.start.x + progress * firstX,
+    y: first.start.y + progress * firstY,
+  };
+}
+
+function detectedQuadFromEdges(guideQuad, edges) {
+  const lines = {
+    left: shiftedLine(
+      guideQuad.topLeft,
+      guideQuad.bottomLeft,
+      edges.left.offset,
+    ),
+    right: shiftedLine(
+      guideQuad.topRight,
+      guideQuad.bottomRight,
+      edges.right.offset,
+    ),
+    top: shiftedLine(guideQuad.topLeft, guideQuad.topRight, edges.top.offset),
+    bottom: shiftedLine(
+      guideQuad.bottomLeft,
+      guideQuad.bottomRight,
+      edges.bottom.offset,
+    ),
+  };
+  const quad = {
+    topLeft: lineIntersection(lines.top, lines.left),
+    topRight: lineIntersection(lines.top, lines.right),
+    bottomRight: lineIntersection(lines.bottom, lines.right),
+    bottomLeft: lineIntersection(lines.bottom, lines.left),
+  };
+  if (Object.values(quad).some((point) => !point)) return null;
+  try {
+    assertQuad(quad);
+  } catch {
+    return null;
+  }
+  return quad;
+}
+
+function sampledDocumentRegion(gray, box, quad = null) {
+  const bounds = quad ? quadBounds(quad) : box;
+  const aspectRatio = bounds.width / bounds.height;
+  const maximumEdge = 140;
+  const width = Math.max(
+    48,
+    Math.round(aspectRatio >= 1 ? maximumEdge : maximumEdge * aspectRatio),
+  );
+  const height = Math.max(
+    48,
+    Math.round(aspectRatio >= 1 ? maximumEdge / aspectRatio : maximumEdge),
+  );
+  const values = new Float32Array(width * height);
+  const projectiveMap = quad ? projectiveMapForQuad(quad) : null;
+  for (let row = 0; row < height; row += 1) {
+    const vertical = 0.045 + ((row + 0.5) / height) * 0.91;
+    for (let column = 0; column < width; column += 1) {
+      const horizontal = 0.04 + ((column + 0.5) / width) * 0.92;
+      const point = projectiveMap
+        ? mapProjectivePoint(projectiveMap, horizontal, vertical)
+        : {
+            x: box.x + box.width * horizontal,
+            y: box.y + box.height * vertical,
+          };
+      const x = clamp(Math.round(point.x), 0, gray.width - 1);
+      const y = clamp(Math.round(point.y), 0, gray.height - 1);
+      values[row * width + column] = gray.data[y * gray.width + x];
+    }
+  }
+  return { data: values, width, height };
+}
+
+function projectionRegularity(values) {
+  if (values.length < 7)
+    return {
+      regular: false,
+      peaks: 0,
+      spacingCv: 1,
+      periodicCorrelation: 0,
+      period: 0,
+    };
+  const mean =
+    values.reduce((total, value) => total + value, 0) / values.length;
+  const variance =
+    values.reduce((total, value) => total + (value - mean) ** 2, 0) /
+    values.length;
+  const threshold = mean + Math.sqrt(variance) * 0.8;
+  const candidates = [];
+  for (let index = 1; index < values.length - 1; index += 1) {
+    if (
+      values[index] >= threshold &&
+      values[index] >= values[index - 1] &&
+      values[index] >= values[index + 1]
+    ) {
+      const previous = candidates.at(-1);
+      if (previous !== undefined && index - previous < 3) {
+        if (values[index] > values[previous])
+          candidates[candidates.length - 1] = index;
+      } else {
+        candidates.push(index);
+      }
+    }
+  }
+  const spacings = candidates
+    .slice(1)
+    .map((value, index) => value - candidates[index]);
+  const spacingMean =
+    spacings.length > 0
+      ? spacings.reduce((total, value) => total + value, 0) / spacings.length
+      : 0;
+  const spacingVariance =
+    spacings.length > 0
+      ? spacings.reduce(
+          (total, value) => total + (value - spacingMean) ** 2,
+          0,
+        ) / spacings.length
+      : 0;
+  const spacingCv =
+    spacings.length > 0
+      ? Math.sqrt(spacingVariance) / Math.max(1, spacingMean)
+      : 1;
+  let periodicCorrelation = 0;
+  let period = 0;
+  for (let lag = 3; lag <= Math.floor(values.length / 4); lag += 1) {
+    let numerator = 0;
+    let leftEnergy = 0;
+    let rightEnergy = 0;
+    for (let index = 0; index < values.length - lag; index += 1) {
+      const left = values[index] - mean;
+      const right = values[index + lag] - mean;
+      numerator += left * right;
+      leftEnergy += left * left;
+      rightEnergy += right * right;
+    }
+    const correlation =
+      numerator / Math.max(1e-6, Math.sqrt(leftEnergy * rightEnergy));
+    if (correlation > periodicCorrelation) {
+      periodicCorrelation = correlation;
+      period = lag;
+    }
+  }
+  return {
+    regular:
+      (candidates.length >= 5 && spacingCv <= 0.3) ||
+      periodicCorrelation >= 0.42,
+    peaks: candidates.length,
+    spacingCv,
+    periodicCorrelation,
+    period,
+  };
+}
+
+function documentTextureMetrics(gray, box, quad, slot = 'generic') {
+  const sample = sampledDocumentRegion(gray, box, quad);
+  const { data, width, height } = sample;
+  const sorted = Array.from(data).sort((left, right) => left - right);
+  const percentile = (fraction) =>
+    sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * fraction))];
+  const p10 = percentile(0.1);
+  const p75 = percentile(0.75);
+  const p90 = percentile(0.9);
+  const brightness =
+    data.reduce((total, value) => total + value, 0) / data.length;
+
+  const stride = width + 1;
+  const integral = new Float64Array((width + 1) * (height + 1));
+  for (let y = 0; y < height; y += 1) {
+    let rowTotal = 0;
+    for (let x = 0; x < width; x += 1) {
+      rowTotal += data[y * width + x];
+      integral[(y + 1) * stride + x + 1] =
+        integral[y * stride + x + 1] + rowTotal;
+    }
+  }
+
+  const strokes = new Uint8Array(width * height);
+  let strokePixels = 0;
+  const radius = 4;
+  for (let y = 1; y < height - 1; y += 1) {
+    for (let x = 1; x < width - 1; x += 1) {
+      const left = Math.max(0, x - radius);
+      const right = Math.min(width - 1, x + radius);
+      const top = Math.max(0, y - radius);
+      const bottom = Math.min(height - 1, y + radius);
+      const area = (right - left + 1) * (bottom - top + 1);
+      const sum =
+        integral[(bottom + 1) * stride + right + 1] -
+        integral[top * stride + right + 1] -
+        integral[(bottom + 1) * stride + left] +
+        integral[top * stride + left];
+      const localMean = sum / area;
+      const index = y * width + x;
+      if (localMean - data[index] >= 12 && data[index] <= p75 - 6) {
+        strokes[index] = 1;
+        strokePixels += 1;
+      }
+    }
+  }
+
+  const components = [];
+  const queue = new Int32Array(strokes.length);
+  for (let start = 0; start < strokes.length; start += 1) {
+    if (strokes[start] === 0) continue;
+    let head = 0;
+    let tail = 0;
+    queue[tail++] = start;
+    strokes[start] = 0;
+    let area = 0;
+    let minimumX = width;
+    let maximumX = 0;
+    let minimumY = height;
+    let maximumY = 0;
+    while (head < tail) {
+      const index = queue[head++];
+      const x = index % width;
+      const y = Math.floor(index / width);
+      area += 1;
+      minimumX = Math.min(minimumX, x);
+      maximumX = Math.max(maximumX, x);
+      minimumY = Math.min(minimumY, y);
+      maximumY = Math.max(maximumY, y);
+      for (let offsetY = -1; offsetY <= 1; offsetY += 1) {
+        for (let offsetX = -1; offsetX <= 1; offsetX += 1) {
+          if (offsetX === 0 && offsetY === 0) continue;
+          const nextX = x + offsetX;
+          const nextY = y + offsetY;
+          if (nextX < 0 || nextX >= width || nextY < 0 || nextY >= height)
+            continue;
+          const next = nextY * width + nextX;
+          if (strokes[next] === 0) continue;
+          strokes[next] = 0;
+          queue[tail++] = next;
+        }
+      }
+    }
+    const componentWidth = maximumX - minimumX + 1;
+    const componentHeight = maximumY - minimumY + 1;
+    const fill = area / (componentWidth * componentHeight);
+    if (
+      area >= 2 &&
+      area <= data.length * 0.0045 &&
+      componentWidth <= width * 0.18 &&
+      componentHeight <= height * 0.14 &&
+      fill >= 0.08 &&
+      fill <= 1
+    ) {
+      components.push({
+        area,
+        centerX: (minimumX + maximumX) / 2,
+        centerY: (minimumY + maximumY) / 2,
+      });
+    }
+  }
+
+  // Every supported identity document carries text in its center/right area.
+  // Ignoring the far-left photo zone prevents portrait texture from being
+  // mistaken for one continuous text block.
+  const textComponents = components.filter(
+    (component) => component.centerX >= width * 0.25,
+  );
+  const rowHits = new Uint16Array(height);
+  const occupiedTiles = new Set();
+  for (const component of textComponents) {
+    rowHits[clamp(Math.round(component.centerY), 0, height - 1)] += 1;
+    occupiedTiles.add(
+      `${Math.min(5, Math.floor((component.centerX / width) * 6))}:${Math.min(
+        3,
+        Math.floor((component.centerY / height) * 4),
+      )}`,
+    );
+  }
+  let textBands = 0;
+  let bandStart = -1;
+  let bandComponents = 0;
+  const maximumBandHeight = Math.max(5, Math.ceil(height * 0.18));
+  for (let y = 0; y <= height; y += 1) {
+    const hits =
+      y < height
+        ? rowHits[y] + (rowHits[y - 1] || 0) + (rowHits[y + 1] || 0)
+        : 0;
+    if (hits >= 3) {
+      if (bandStart < 0) {
+        bandStart = y;
+        bandComponents = 0;
+      }
+      bandComponents += rowHits[y] || 0;
+    } else if (bandStart >= 0) {
+      const bandHeight = y - bandStart;
+      if (bandComponents >= 3 && bandHeight <= maximumBandHeight)
+        textBands += 1;
+      bandStart = -1;
+      bandComponents = 0;
+    }
+  }
+
+  const verticalProjection = new Float32Array(width);
+  const horizontalProjection = new Float32Array(height);
+  for (let y = 1; y < height - 1; y += 1) {
+    for (let x = 1; x < width - 1; x += 1) {
+      const index = y * width + x;
+      verticalProjection[x] += Math.abs(data[index + 1] - data[index - 1]);
+      horizontalProjection[y] += Math.abs(
+        data[index + width] - data[index - width],
+      );
+    }
+  }
+  for (let x = 0; x < width; x += 1)
+    verticalProjection[x] /= Math.max(1, height - 2);
+  for (let y = 0; y < height; y += 1)
+    horizontalProjection[y] /= Math.max(1, width - 2);
+  const verticalRegularity = projectionRegularity(verticalProjection);
+  const horizontalRegularity = projectionRegularity(horizontalProjection);
+  const edgeDensity = strokePixels / data.length;
+  const twoAxisGridLike =
+    edgeDensity >= 0.02 &&
+    verticalRegularity.regular &&
+    horizontalRegularity.regular;
+  // Real laptop keyboards are not perfect grids: their rows are staggered and
+  // the space bar destroys vertical periodicity. They still produce an
+  // unusually dense field of small edges, several evenly repeating rows and
+  // many vertical peaks. Requiring that combination avoids treating ordinary
+  // document text lines as keys merely because one projection is periodic.
+  const staggeredKeyGridLike =
+    edgeDensity >= 0.2 &&
+    horizontalRegularity.regular &&
+    horizontalRegularity.periodicCorrelation >= 0.48 &&
+    verticalRegularity.peaks >= 8 &&
+    textComponents.length >= 24 &&
+    textBands >= 4 &&
+    occupiedTiles.size >= 8;
+  const gridLike = twoAxisGridLike || staggeredKeyGridLike;
+  const minimumComponents = slot === 'passport-data' ? 10 : 8;
+  const accepted =
+    brightness >= 52 &&
+    p75 >= 72 &&
+    p90 - p10 >= 14 &&
+    edgeDensity >= 0.006 &&
+    edgeDensity <= 0.38 &&
+    textComponents.length >= minimumComponents &&
+    textBands >= 2 &&
+    occupiedTiles.size >= 3 &&
+    !gridLike;
+  sample.data.fill(0);
+  return {
+    accepted,
+    brightness,
+    tonalRange: p90 - p10,
+    edgeDensity,
+    textComponents: textComponents.length,
+    textBands,
+    occupiedTiles: occupiedTiles.size,
+    gridLike,
+    staggeredKeyGridLike,
+    verticalRegularity,
+    horizontalRegularity,
+  };
+}
+
+export function analyzeDocumentPresence(
+  image,
+  { regionRect = null, regionQuad = null, slot = 'generic' } = {},
+) {
+  assertImageShape(image);
+  const fullRect = { x: 0, y: 0, width: image.width, height: image.height };
+  const rect = regionRect || (regionQuad ? quadBounds(regionQuad) : fullRect);
+  assertRect(rect, 'Der Dokumentbereich ist ungültig.');
+  if (
+    rect.x < 0 ||
+    rect.y < 0 ||
+    rect.x + rect.width > image.width ||
+    rect.y + rect.height > image.height
+  ) {
+    throw new TypeError('Der Dokumentbereich ist ungültig.');
+  }
+  if (regionQuad) assertQuad(regionQuad, 'Der Dokumentbereich ist ungültig.');
+  const gray = grayscaleGrid(image, 360);
+  const normalizedRegion = normalizedRect(
+    rect,
+    image.width,
+    image.height,
+    gray.width,
+    gray.height,
+  );
+  const normalizedRegionQuad = regionQuad
+    ? normalizedQuad(
+        regionQuad,
+        image.width,
+        image.height,
+        gray.width,
+        gray.height,
+      )
+    : null;
+  const metrics = documentTextureMetrics(
+    gray,
+    normalizedRegion,
+    normalizedRegionQuad,
+    slot,
+  );
+  gray.data.fill(0);
+  return {
+    accepted: metrics.accepted,
+    status: metrics.accepted ? 'accepted' : 'document',
+    message: metrics.accepted
+      ? 'Dokument erkannt.'
+      : 'Kein Dokument erkannt. Bitte nur den Ausweis oder Pass in den Rahmen halten.',
+    metrics,
+  };
 }
 
 function normalizedRect(rect, fromWidth, fromHeight, toWidth, toHeight) {
@@ -724,12 +1204,16 @@ function interiorDetailInQuad(gray, quad) {
 }
 
 /**
- * Lightweight, deliberately tolerant document positioning. It looks for long
- * card edges close to straight and mildly perspective guide candidates.
- * Requiring only three confident edges avoids punishing rounded corners,
- * reflections, shadows and ordinary hand jitter.
+ * Lightweight document positioning. The strict mode used by the camera
+ * requires one coherent printed-document surface; the legacy default keeps
+ * this helper backwards compatible for callers that only need edge placement.
  */
-export function analyzeFramePosition(image, guideRect, exactGuideQuad = null) {
+export function analyzeFramePosition(
+  image,
+  guideRect,
+  exactGuideQuad = null,
+  { requireDocumentPresence = false, slot = 'generic' } = {},
+) {
   assertImageShape(image);
   if (
     !guideRect ||
@@ -774,6 +1258,10 @@ export function analyzeFramePosition(image, guideRect, exactGuideQuad = null) {
       )
     : null;
   const edgeIsStrong = (edge) => edge.score >= 7 && edge.coverage >= 0.06;
+  const edgeLooksLikeBoundary = (edge) =>
+    edgeIsStrong(edge) &&
+    edge.longestRunCoverage >= 0.16 &&
+    edge.polarityAgreement >= 0.58;
   // Try the visible guide and the common straight placement first. Most live
   // frames therefore finish after one or two inexpensive hypotheses. The
   // remaining bounded candidates cover pronounced perspective and up to six
@@ -797,7 +1285,16 @@ export function analyzeFramePosition(image, guideRect, exactGuideQuad = null) {
         [-0.04, -6],
         [-0.04, 6],
       ];
-  let bestMatch = { strongEdges: 0, score: 0 };
+  let bestMatch = {
+    strongEdges: 0,
+    documentEdges: 0,
+    uniqueEdges: 0,
+    consistentPolarity: 0,
+    score: 0,
+    quad: normalizedExactQuad || perspectiveGuideQuad(guide, 0.06, 0),
+    detectedQuad: null,
+    edges: null,
+  };
   for (const candidate of perspectiveCandidates) {
     const quad = normalizedExactQuad
       ? candidate
@@ -807,74 +1304,174 @@ export function analyzeFramePosition(image, guideRect, exactGuideQuad = null) {
         gray,
         quad.topLeft,
         quad.bottomLeft,
-        guide.width * 0.2,
+        guide.width * (requireDocumentPresence ? 0.12 : 0.2),
       ),
       right: searchSegmentEdge(
         gray,
         quad.topRight,
         quad.bottomRight,
-        guide.width * 0.2,
+        guide.width * (requireDocumentPresence ? 0.12 : 0.2),
       ),
       top: searchSegmentEdge(
         gray,
         quad.topLeft,
         quad.topRight,
-        guide.height * 0.22,
+        guide.height * (requireDocumentPresence ? 0.14 : 0.22),
       ),
       bottom: searchSegmentEdge(
         gray,
         quad.bottomLeft,
         quad.bottomRight,
-        guide.height * 0.22,
+        guide.height * (requireDocumentPresence ? 0.14 : 0.22),
       ),
     };
     const strongEdges = Object.values(edges).filter(edgeIsStrong).length;
+    const documentEdges = Object.values(edges).filter(
+      edgeLooksLikeBoundary,
+    ).length;
+    const uniqueEdges = Object.values(edges).filter(
+      (edge) =>
+        edgeLooksLikeBoundary(edge) &&
+        (edge.peakMargin >= 1.3 || edge.peakDominance >= 1.04),
+    ).length;
+    const normalizedOutsideContrast = {
+      left: edges.left.signedContrast,
+      right: -edges.right.signedContrast,
+      top: -edges.top.signedContrast,
+      bottom: edges.bottom.signedContrast,
+    };
+    const boundaryContrasts = Object.entries(normalizedOutsideContrast)
+      .filter(
+        ([name, contrast]) =>
+          edgeLooksLikeBoundary(edges[name]) && Math.abs(contrast) >= 3,
+      )
+      .map(([, contrast]) => contrast);
+    const positivePolarity = boundaryContrasts.filter(
+      (contrast) => contrast > 0,
+    ).length;
+    const negativePolarity = boundaryContrasts.filter(
+      (contrast) => contrast < 0,
+    ).length;
+    const consistentPolarity = Math.max(positivePolarity, negativePolarity);
+    const detectedQuad = detectedQuadFromEdges(quad, edges);
     const score = Object.values(edges).reduce(
       (total, edge) => total + edge.score,
       0,
     );
     if (
-      strongEdges > bestMatch.strongEdges ||
-      (strongEdges === bestMatch.strongEdges && score > bestMatch.score)
+      documentEdges > bestMatch.documentEdges ||
+      (documentEdges === bestMatch.documentEdges &&
+        consistentPolarity > bestMatch.consistentPolarity) ||
+      (documentEdges === bestMatch.documentEdges &&
+        consistentPolarity === bestMatch.consistentPolarity &&
+        uniqueEdges > bestMatch.uniqueEdges) ||
+      (documentEdges === bestMatch.documentEdges &&
+        consistentPolarity === bestMatch.consistentPolarity &&
+        uniqueEdges === bestMatch.uniqueEdges &&
+        strongEdges > bestMatch.strongEdges) ||
+      (documentEdges === bestMatch.documentEdges &&
+        consistentPolarity === bestMatch.consistentPolarity &&
+        uniqueEdges === bestMatch.uniqueEdges &&
+        strongEdges === bestMatch.strongEdges &&
+        score > bestMatch.score)
     ) {
-      bestMatch = { strongEdges, score };
+      bestMatch = {
+        strongEdges,
+        documentEdges,
+        uniqueEdges,
+        consistentPolarity,
+        score,
+        quad,
+        detectedQuad,
+        edges,
+      };
     }
-    if (strongEdges === 4) break;
+    if (documentEdges === 4 && uniqueEdges >= 3 && consistentPolarity >= 3)
+      break;
   }
   const strongEdges = bestMatch.strongEdges;
-  // The final photo is cropped to the visible guide, not to this lightweight
-  // edge estimate. Printed lines and holograms can otherwise be mistaken for
-  // a card boundary and make an already well-positioned ID appear to jump.
-  // Keep the edges only as document-presence evidence and anchor the hold
-  // timer to the stable guide itself.
+  const detectedBounds = bestMatch.detectedQuad
+    ? quadBounds(bestMatch.detectedQuad)
+    : guide;
+  const detectedCenter = {
+    x: detectedBounds.x + detectedBounds.width / 2,
+    y: detectedBounds.y + detectedBounds.height / 2,
+  };
+  const guideCenter = {
+    x: guide.x + guide.width / 2,
+    y: guide.y + guide.height / 2,
+  };
+  const geometryCoherent =
+    Boolean(bestMatch.detectedQuad) &&
+    detectedBounds.width / guide.width >= 0.72 &&
+    detectedBounds.width / guide.width <= 1.28 &&
+    detectedBounds.height / guide.height >= 0.72 &&
+    detectedBounds.height / guide.height <= 1.28 &&
+    Math.abs(detectedCenter.x - guideCenter.x) <= guide.width * 0.15 &&
+    Math.abs(detectedCenter.y - guideCenter.y) <= guide.height * 0.17;
   const detail = normalizedExactQuad
     ? interiorDetailInQuad(gray, normalizedExactQuad)
     : interiorDetail(gray, guide);
   const hasContent = detail >= 0.006;
-  const positioned = strongEdges >= 3 && hasContent;
+  const texture = requireDocumentPresence
+    ? documentTextureMetrics(gray, detectedBounds, bestMatch.detectedQuad, slot)
+    : null;
+  const boundaryAccepted =
+    geometryCoherent &&
+    bestMatch.documentEdges >= 3 &&
+    bestMatch.uniqueEdges >= 2 &&
+    bestMatch.consistentPolarity >= 2;
+  const documentPresent = requireDocumentPresence
+    ? Boolean(texture?.accepted)
+    : hasContent;
+  const positioned = requireDocumentPresence
+    ? boundaryAccepted && documentPresent
+    : strongEdges >= 3 && hasContent;
 
   let reason = 'Ausweis vollständig in den Rahmen halten.';
-  if (strongEdges >= 3 && !hasContent)
+  if (requireDocumentPresence && boundaryAccepted && !texture?.accepted)
+    reason =
+      'Kein Dokument erkannt. Bitte nur den Ausweis oder Pass in den Rahmen halten.';
+  else if (strongEdges >= 3 && !hasContent)
     reason = 'Ausweis ruhig und gut beleuchtet halten.';
-  else if (positioned) reason = 'Position passt. Bitte ruhig halten.';
+  else if (positioned)
+    reason = 'Dokument erkannt. Position passt. Bitte ruhig halten.';
 
+  const resultBounds =
+    requireDocumentPresence && bestMatch.detectedQuad ? detectedBounds : guide;
   const resultBox = normalizedRect(
-    guide,
+    resultBounds,
     gray.width,
     gray.height,
     image.width,
     image.height,
   );
+  const resultQuad =
+    requireDocumentPresence && bestMatch.detectedQuad
+      ? normalizedQuad(
+          bestMatch.detectedQuad,
+          gray.width,
+          gray.height,
+          image.width,
+          image.height,
+        )
+      : exactGuideQuad
+        ? mapQuad(exactGuideQuad, (point) => ({ ...point }))
+        : null;
   gray.data.fill(0);
   return {
     positioned,
+    documentPresent,
     reason,
     box: resultBox,
-    quad: exactGuideQuad
-      ? mapQuad(exactGuideQuad, (point) => ({ ...point }))
-      : null,
+    quad: resultQuad,
     strongEdges,
+    documentEdges: bestMatch.documentEdges,
+    uniqueEdges: bestMatch.uniqueEdges,
+    consistentPolarity: bestMatch.consistentPolarity,
+    geometryCoherent,
     detail,
+    texture,
   };
 }
 
