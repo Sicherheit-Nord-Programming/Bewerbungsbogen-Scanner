@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import { Buffer } from 'node:buffer';
+import { createHash } from 'node:crypto';
 import { test } from 'node:test';
 
 import {
@@ -6,6 +8,7 @@ import {
   callRelay,
   callRelayWithRecovery,
   decryptStaticBootstrap,
+  deriveCompactStaticPairing,
   disposePreparedCapture,
   importCaptureKey,
   importStaticPairingKey,
@@ -15,6 +18,50 @@ import {
 } from './relay-client.js';
 
 const SESSION_ID = '11111111-1111-4111-8111-111111111111';
+
+test('compact QR derives the static station and pairing key without retaining the code', async () => {
+  const compactCode = Uint8Array.from(
+    { length: 16 },
+    (_value, index) => index + 1,
+  );
+  const expectedCode = Buffer.from(compactCode);
+  const expectedStationId = createHash('sha256')
+    .update('SN-ID-COMPACT-STATION/v1|', 'utf8')
+    .update(expectedCode)
+    .digest('hex');
+  const expectedPairingBytes = createHash('sha256')
+    .update('SN-ID-COMPACT-PAIRING/v1|', 'utf8')
+    .update(expectedCode)
+    .digest();
+  const expectedPairingKey = await crypto.subtle.importKey(
+    'raw',
+    expectedPairingBytes,
+    'AES-GCM',
+    false,
+    ['encrypt'],
+  );
+  const { stationId, pairingKey } =
+    await deriveCompactStaticPairing(compactCode);
+  assert.equal(stationId, expectedStationId);
+  assert.ok(compactCode.every((byte) => byte === 0));
+
+  const iv = Uint8Array.from({ length: 12 }, (_value, index) => index + 7);
+  const plaintext = new TextEncoder().encode('compact pairing proof');
+  const ciphertext = await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv, tagLength: 128 },
+    expectedPairingKey,
+    plaintext,
+  );
+  const decrypted = await crypto.subtle.decrypt(
+    { name: 'AES-GCM', iv, tagLength: 128 },
+    pairingKey,
+    ciphertext,
+  );
+  assert.equal(new TextDecoder().decode(decrypted), 'compact pairing proof');
+  expectedCode.fill(0);
+  expectedPairingBytes.fill(0);
+  plaintext.fill(0);
+});
 
 test('HTTP relay uses the preflight-free envelope contract exactly', async () => {
   let observed;

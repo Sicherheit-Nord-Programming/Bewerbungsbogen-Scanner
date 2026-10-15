@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { Buffer } from 'node:buffer';
 import { test } from 'node:test';
 
 import {
@@ -26,6 +27,7 @@ import {
   parseDiscoveredScannerBootstrap,
   parseScannerBootstrap,
   PASSPORT_ASPECT_RATIO,
+  PRODUCTION_ID_CAPTURE_RELAY_ENDPOINT,
   perspectiveRectificationMesh,
   portraitCaptureLayout,
   projectPointInQuad,
@@ -467,8 +469,24 @@ test('parses one-use and exact static QR fragments only for the fixed Apps Scrip
   );
   versionThree.pairingKeyBytes.fill(0);
 
+  const compactCode = Buffer.alloc(16, 0x5a);
+  const compactFragment = compactCode.toString('base64url');
+  const versionFour = parseScannerBootstrap(compactFragment);
+  assert.equal(versionFour.version, '4');
+  assert.deepEqual(Buffer.from(versionFour.compactCodeBytes), compactCode);
+  assert.equal(versionFour.endpoint, PRODUCTION_ID_CAPTURE_RELAY_ENDPOINT);
+  versionFour.compactCodeBytes.fill(0);
+
   assert.throws(
     () => parseScannerBootstrap(qrFragment({ v: '4' })),
+    /ungültig/,
+  );
+  assert.throws(
+    () => parseScannerBootstrap(`${compactFragment}&v=4`),
+    /ungültig/,
+  );
+  assert.throws(
+    () => parseScannerBootstrap(compactFragment.slice(0, -1)),
     /ungültig/,
   );
   assert.throws(

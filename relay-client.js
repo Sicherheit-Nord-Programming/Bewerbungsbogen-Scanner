@@ -1,6 +1,8 @@
 const CHUNK_CHARACTERS = 64 * 1024;
 const MAX_CIPHERTEXT_BYTES = 8 * 1024 * 1024;
 const CONSENT_VERSION = 'id-copy-consent-de-v1';
+const COMPACT_STATION_DOMAIN = 'SN-ID-COMPACT-STATION/v1|';
+const COMPACT_PAIRING_DOMAIN = 'SN-ID-COMPACT-PAIRING/v1|';
 const STATIC_BOOTSTRAP_AAD_DOMAIN = 'SN-ID-STATIC-BOOTSTRAP/v1|';
 const STATIC_DISCOVERY_INTERVAL_MS = 1_500;
 const SESSION_PATTERN =
@@ -89,6 +91,57 @@ export async function importStaticPairingKey(
     ]);
   } finally {
     keyBytes?.fill?.(0);
+  }
+}
+
+function compactDerivationInput(domain, compactCodeBytes) {
+  const domainBytes = new TextEncoder().encode(domain);
+  const input = new Uint8Array(domainBytes.length + compactCodeBytes.length);
+  input.set(domainBytes);
+  input.set(compactCodeBytes, domainBytes.length);
+  domainBytes.fill(0);
+  return input;
+}
+
+export async function deriveCompactStaticPairing(
+  compactCodeBytes,
+  cryptoApi = globalThis.crypto,
+) {
+  let stationInput;
+  let pairingInput;
+  let stationDigest;
+  let pairingDigest;
+  try {
+    if (
+      !(compactCodeBytes instanceof Uint8Array) ||
+      compactCodeBytes.length !== 16
+    ) {
+      throw new TypeError('Der kompakte QR-Code ist ungültig.');
+    }
+    stationInput = compactDerivationInput(
+      COMPACT_STATION_DOMAIN,
+      compactCodeBytes,
+    );
+    pairingInput = compactDerivationInput(
+      COMPACT_PAIRING_DOMAIN,
+      compactCodeBytes,
+    );
+    stationDigest = new Uint8Array(
+      await cryptoApi.subtle.digest('SHA-256', stationInput),
+    );
+    pairingDigest = new Uint8Array(
+      await cryptoApi.subtle.digest('SHA-256', pairingInput),
+    );
+    const stationId = hex(stationDigest);
+    const pairingKey = await importStaticPairingKey(pairingDigest, cryptoApi);
+    pairingDigest = null;
+    return { stationId, pairingKey };
+  } finally {
+    compactCodeBytes?.fill?.(0);
+    stationInput?.fill?.(0);
+    pairingInput?.fill?.(0);
+    stationDigest?.fill?.(0);
+    pairingDigest?.fill?.(0);
   }
 }
 

@@ -31,6 +31,7 @@ dadurch nicht in HTTP-Requests oder Server-Logs:
 ```text
 #v=1|2&s=<session-uuid>&u=<upload-capability>&k=<aes-256-key>&e=<apps-script-exec-url>
 #v=3&d=<station-id>&p=<pairing-key>&e=<apps-script-exec-url>
+#<compact-code>
 ```
 
 - `v=1`: bisheriger Direktfluss für Vorder- und Rückseite des Personalausweises
@@ -39,6 +40,9 @@ dadurch nicht in HTTP-Requests oder Server-Logs:
 - `v=3`: dauerhaft gleicher QR-Code einer eingeschriebenen Laptop-Station;
   `discover` liefert nur den verschlüsselten Bootstrap der aktuell geöffneten
   Einmalsitzung
+- `compact-code`: aktueller kurzer QR-Code aus 16 Byte als kanonisches
+  Base64url; Stationskennung und Kopplungsschlüssel werden daraus lokal
+  abgeleitet, der feste Produktions-Relay steht nicht mehr sichtbar im QR
 - `s`: UUID der einmaligen Sitzung
 - `u`: 32 Byte Upload-Capability als Base64url ohne Padding
 - `k`: 32 Byte AES-256-Schlüssel als Base64url ohne Padding
@@ -48,12 +52,12 @@ Nach dem Einlesen entfernt die Seite das Fragment sofort aus der sichtbaren
 Adresse. Der Schlüssel wird als nicht exportierbarer Web-Crypto-Schlüssel
 importiert und niemals an den Relay-Dienst übertragen.
 
-Bei `v=3` fragt das Handy die aktuelle Sitzung mit der Stationskennung ab. Ist
-der Desktop noch beim Hintergrundstart, wird neutral weiter gewartet. Der mit
-dem Kopplungsschlüssel per AES-256-GCM authentisierte Bootstrap enthält danach
-den unveränderten v2-Sitzungsvertrag; Claim, Aufnahme und Upload laufen wie bei
-`v=2`. Das erste Claim-Fenster ist kurz, die anschließende Scan-Sitzung bleibt
-15 Minuten gültig.
+Bei `v=3` oder einem kompakten Code fragt das Handy die aktuelle Sitzung mit der
+Stationskennung ab. Ist der Desktop noch beim Hintergrundstart, wird neutral
+weiter gewartet. Der mit dem Kopplungsschlüssel per AES-256-GCM authentisierte
+Bootstrap enthält danach den unveränderten v2-Sitzungsvertrag; Claim, Aufnahme
+und Upload laufen wie bei `v=2`. Das erste Claim-Fenster ist kurz, die
+anschließende Scan-Sitzung bleibt 15 Minuten gültig.
 
 Bei `v=2` werden zuerst eine, zwei oder drei Dokumentarten ausgewählt. Nach
 `Fertig` ist dieser Scanplan gesperrt und die Kamera startet mit dem

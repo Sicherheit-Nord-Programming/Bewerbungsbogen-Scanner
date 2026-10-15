@@ -84,7 +84,7 @@ test('standalone page contains a live camera guide without external code', async
   assert.match(html, /id="countdown"/);
   assert.match(html, /id="rotate-phone"/);
   assert.match(html, /Handy waagerecht drehen/);
-  assert.match(html, /scanner\.js\?v=20261015-dashboard-orientation-v28/);
+  assert.match(html, /scanner\.js\?v=20261015-compact-qr-v29/);
   assert.match(html, /styles\.css\?v=20261014-passport-landscape-v24/);
   assert.match(html, /<title>Sicherheit Nord · Ausweisscan<\/title>/);
   assert.match(
@@ -321,7 +321,7 @@ test('standalone page contains a live camera guide without external code', async
   );
   assert.match(script, /prepareEncryptedCapture/);
   assert.match(script, /protocolVersion,/);
-  assert.match(script, /scanner-core\.js\?v=20261014-document-allowlist-v25/);
+  assert.match(script, /scanner-core\.js\?v=20261015-compact-qr-v29/);
   assert.match(
     script,
     /document-recognizer-core\.js\?v=20261014-document-allowlist-v26/,
@@ -330,7 +330,7 @@ test('standalone page contains a live camera guide without external code', async
     script,
     /document-recognizer\.js\?v=20261014-document-allowlist-v26/,
   );
-  assert.match(script, /relay-client\.js\?v=20261014-document-allowlist-v25/);
+  assert.match(script, /relay-client\.js\?v=20261015-compact-qr-v29/);
   assert.match(script, /recognizeDocumentCanvas\(canvas, capturedSlot\)/);
   assert.match(script, /recognizeDocumentCanvas\(canvas, 'tax-id'\)/);
   assert.match(script, /cancelDocumentRecognition/);
@@ -369,6 +369,7 @@ test('standalone page contains a live camera guide without external code', async
     /Sichere Übertragung\s+\$\{index \+ 1\}\s+von\s+\$\{prepared\.chunks\.length\}/,
   );
   assert.match(script, /waitForStaticSession\(staticEndpoint, stationId/);
+  assert.match(script, /deriveCompactStaticPairing\(/);
   assert.match(script, /decryptStaticBootstrap\(\{/);
   assert.match(script, /parseDiscoveredScannerBootstrap\(decrypted/);
   const hashRead = script.indexOf('let bootstrapHash = window.location.hash;');
@@ -398,7 +399,7 @@ test('standalone page contains a live camera guide without external code', async
   assert.match(script, /showDashboard\(\)/);
   assert.match(
     script,
-    /parsedBootstrap\.version === '2'[\s\S]+?documentSetVersion =\s*parsedBootstrap\.version === '3' \? 3 : 2;[\s\S]+?showDashboard\(\)[\s\S]+?await resolveScannerBootstrap\(parsedBootstrap\)/,
+    /parsedBootstrap\.version === '2'[\s\S]+?parsedBootstrap\.version === '4'[\s\S]+?documentSetVersion =\s*parsedBootstrap\.version === '3' \|\| parsedBootstrap\.version === '4'[\s\S]+?showDashboard\(\)[\s\S]+?await resolveScannerBootstrap\(parsedBootstrap\)/,
   );
   assert.match(
     script,
@@ -734,7 +735,7 @@ export function disposeDocumentRecognizer() { return Promise.resolve(); }
   const source = await readFile(scannerUrl, 'utf8');
   const instrumentedSource = source
     .replace(
-      "from './scanner-core.js?v=20261014-document-allowlist-v25';",
+      "from './scanner-core.js?v=20261015-compact-qr-v29';",
       `from ${JSON.stringify(scannerCoreUrl)};`,
     )
     .replace(
@@ -746,7 +747,7 @@ export function disposeDocumentRecognizer() { return Promise.resolve(); }
       `from ${JSON.stringify(documentRecognizerStubUrl)};`,
     )
     .replace(
-      "from './relay-client.js?v=20261014-document-allowlist-v25';",
+      "from './relay-client.js?v=20261015-compact-qr-v29';",
       `from ${JSON.stringify(relayClientUrl)};`,
     )
     .replace(

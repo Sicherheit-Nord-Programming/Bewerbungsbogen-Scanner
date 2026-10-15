@@ -21,7 +21,7 @@ import {
   portraitCaptureLayout,
   scannerDocumentsForVersion,
   updateHoldState,
-} from './scanner-core.js?v=20261014-document-allowlist-v25';
+} from './scanner-core.js?v=20261015-compact-qr-v29';
 import {
   createVisualSignature,
   documentVisualFingerprintsMatch,
@@ -35,6 +35,7 @@ import {
 import {
   callRelayWithRecovery,
   createPhoneSession,
+  deriveCompactStaticPairing,
   decryptStaticBootstrap,
   disposePreparedCapture,
   importCaptureKey,
@@ -43,7 +44,7 @@ import {
   RelayError,
   uploadChunksConcurrently,
   waitForStaticSession,
-} from './relay-client.js?v=20261014-document-allowlist-v25';
+} from './relay-client.js?v=20261015-compact-qr-v29';
 
 const MAX_FINALIZE_ATTEMPTS = 5;
 const LIVE_ANALYSIS_INTERVAL_MS = 145;
@@ -1966,7 +1967,10 @@ function openDocument(documentId) {
   elements.backToDashboard.hidden = false;
   state = 'scanning';
   setGuide(false);
-  setCameraMessage('Kamera wird geöffnet …', 'Bitte das Dokument bereithalten.');
+  setCameraMessage(
+    'Kamera wird geöffnet …',
+    'Bitte das Dokument bereithalten.',
+  );
   animateViewIn(elements.cameraStage, 'forward');
   elements.cameraStage.focus({ preventScroll: true });
   void requestCamera();
@@ -2071,7 +2075,10 @@ function resumeOrRequestCamera() {
     return;
   }
   setGuide(false);
-  setCameraMessage('Kamera wird geöffnet …', 'Bitte das Dokument bereithalten.');
+  setCameraMessage(
+    'Kamera wird geöffnet …',
+    'Bitte das Dokument bereithalten.',
+  );
   if (document.visibilityState === 'visible') void requestCamera();
 }
 
@@ -2498,12 +2505,21 @@ function completeSession(returnToDashboard = false) {
 }
 
 async function resolveScannerBootstrap(initialBootstrap) {
-  if (initialBootstrap.version !== '3') return initialBootstrap;
+  if (initialBootstrap.version !== '3' && initialBootstrap.version !== '4') {
+    return initialBootstrap;
+  }
 
-  const { endpoint: staticEndpoint, stationId } = initialBootstrap;
-  const pairingKey = await importStaticPairingKey(
-    initialBootstrap.pairingKeyBytes,
-  );
+  const staticEndpoint = initialBootstrap.endpoint;
+  const staticPairing =
+    initialBootstrap.version === '4'
+      ? await deriveCompactStaticPairing(initialBootstrap.compactCodeBytes)
+      : {
+          stationId: initialBootstrap.stationId,
+          pairingKey: await importStaticPairingKey(
+            initialBootstrap.pairingKeyBytes,
+          ),
+        };
+  const { stationId, pairingKey } = staticPairing;
   let discovered;
   let decrypted;
   try {
@@ -2553,14 +2569,21 @@ async function start() {
     } finally {
       bootstrapHash = '';
     }
-    if (parsedBootstrap.version === '2' || parsedBootstrap.version === '3') {
+    if (
+      parsedBootstrap.version === '2' ||
+      parsedBootstrap.version === '3' ||
+      parsedBootstrap.version === '4'
+    ) {
       // The document index is useful immediately and does not depend on relay
       // data. Keep the secure discovery/claim in the background so a permanent
       // QR never strands the applicant on a loading screen while the laptop is
       // still publishing its current session.
       protocolVersion = '2';
       captureMode = 'documents-v2';
-      documentSetVersion = parsedBootstrap.version === '3' ? 3 : 2;
+      documentSetVersion =
+        parsedBootstrap.version === '3' || parsedBootstrap.version === '4'
+          ? 3
+          : 2;
       showDashboard();
     }
     const bootstrap = await resolveScannerBootstrap(parsedBootstrap);

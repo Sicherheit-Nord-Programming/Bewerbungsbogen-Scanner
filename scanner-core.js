@@ -33,8 +33,11 @@ const MIN_GLOBAL_GLARE_SUPPORT = 0.012;
 const SESSION_PATTERN =
   /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
 const CAPABILITY_PATTERN = /^[A-Za-z0-9_-]{43}$/;
+const COMPACT_CODE_PATTERN = /^[A-Za-z0-9_-]{22}$/;
 const STATION_PATTERN = /^[a-f0-9]{64}$/;
 const APPS_SCRIPT_ENDPOINT_PATTERN = /^\/macros\/s\/[A-Za-z0-9_-]+\/exec$/;
+export const PRODUCTION_ID_CAPTURE_RELAY_ENDPOINT =
+  'https://script.google.com/macros/s/AKfycbyDgqHC15aidB_SzxGwgU_vei18jCbSN-YGfHpq6GVify7dFzKHC6nfR2wdsZaprbvvig/exec';
 
 export const SCANNER_DOCUMENTS = Object.freeze([
   Object.freeze({
@@ -186,6 +189,15 @@ function base64urlToBytes(value) {
   return Uint8Array.from(binary, (character) => character.charCodeAt(0));
 }
 
+function bytesToBase64url(bytes) {
+  let binary = '';
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary)
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/g, '');
+}
+
 function parseRelayEndpoint(value) {
   let endpoint;
   try {
@@ -219,6 +231,24 @@ function decodeSecret(value) {
   return bytes;
 }
 
+function decodeCompactCode(value) {
+  let bytes;
+  try {
+    bytes = base64urlToBytes(value);
+  } catch {
+    throw new Error('Der QR-Code ist unvollständig oder ungültig.');
+  }
+  if (
+    !COMPACT_CODE_PATTERN.test(value) ||
+    bytes.length !== 16 ||
+    bytesToBase64url(bytes) !== value
+  ) {
+    bytes.fill(0);
+    throw new Error('Der QR-Code ist unvollständig oder ungültig.');
+  }
+  return bytes;
+}
+
 function parseOneUseBootstrap(values) {
   const version = values.v || '';
   const sessionId = values.s || '';
@@ -246,13 +276,22 @@ function parseOneUseBootstrap(values) {
 }
 
 /**
- * Parses a one-use v1/v2 or static v3 QR fragment without ever placing its
- * secrets in a query string. The endpoint is deliberately restricted to the
- * production Apps Script host so a forged QR code cannot redirect encrypted
- * ID material.
+ * Parses a one-use v1/v2, legacy static v3 or compact static v4 QR fragment
+ * without ever placing its secrets in a query string. The relay endpoint is
+ * deliberately fixed or restricted to the production Apps Script host so a
+ * forged QR code cannot redirect encrypted ID material.
  */
 export function parseScannerBootstrap(hash) {
-  const fragment = new URLSearchParams(String(hash || '').replace(/^#/, ''));
+  const serialized = String(hash || '').replace(/^#/, '');
+  if (COMPACT_CODE_PATTERN.test(serialized)) {
+    return {
+      version: '4',
+      compactCodeBytes: decodeCompactCode(serialized),
+      endpoint: parseRelayEndpoint(PRODUCTION_ID_CAPTURE_RELAY_ENDPOINT),
+    };
+  }
+
+  const fragment = new URLSearchParams(serialized);
   const version = fragment.get('v') || '';
   if (version !== '3') {
     return parseOneUseBootstrap({
