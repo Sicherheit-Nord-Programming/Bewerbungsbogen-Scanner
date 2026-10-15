@@ -891,10 +891,7 @@ export function disposeDocumentRecognizer() { return Promise.resolve(); }
       '    frozenCapture = globalThis.__scannerTestFreezeCapture();',
     )
     .replace(
-      `    const result = await produceCapture(
-      frozenCapture,
-      capturedCameraGeneration,
-    );`,
+      /    const result = await produceCapture\(\r?\n      frozenCapture,\r?\n      capturedCameraGeneration,\r?\n    \);/,
       `    const result = await globalThis.__scannerTestProduceCapture(
       frozenCapture,
       capturedCameraGeneration,
@@ -1085,6 +1082,11 @@ export function torchLifecycleState() {
   assert.doesNotMatch(
     instrumentedSource,
     /\n(?:if \(!window\.__SN_SCANNER_REDIRECTING__\) )?void start\(\);\s*$/,
+  );
+  assert.match(
+    instrumentedSource,
+    /globalThis\.__scannerTestProduceCapture/,
+    'capture processor instrumentation must support Windows line endings',
   );
 
   const originalGlobals = new Map(
