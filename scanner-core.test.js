@@ -1008,6 +1008,7 @@ test('live guide accepts a softly focused smaller ID while final checks stay str
   assert.equal(live.texture.liveAccepted, true);
   assert.ok(live.texture.textComponents >= 3);
   assert.equal(live.texture.strongKeyboardPattern, false);
+  assert.match(live.reason, /Position passt/);
 
   const frozen = analyzeDocumentPresence(softDocument, {
     regionRect: card,

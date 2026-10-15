@@ -1497,7 +1497,6 @@ export function analyzeFramePosition(
   const boundaryAccepted =
     geometryCoherent &&
     bestMatch.documentEdges >= 2 &&
-    bestMatch.strongEdges >= 3 &&
     bestMatch.uniqueEdges >= 1 &&
     bestMatch.consistentPolarity >= 1;
   const documentPresent = requireDocumentPresence
@@ -1508,7 +1507,7 @@ export function analyzeFramePosition(
     : strongEdges >= 3 && hasContent;
 
   let reason = 'Ausweis vollständig in den Rahmen halten.';
-  if (requireDocumentPresence && boundaryAccepted && !texture?.accepted)
+  if (requireDocumentPresence && boundaryAccepted && !texture?.liveAccepted)
     reason =
       'Kein Dokument erkannt. Bitte nur den Ausweis oder Pass in den Rahmen halten.';
   else if (strongEdges >= 3 && !hasContent)
