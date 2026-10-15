@@ -23,10 +23,6 @@ import {
   updateHoldState,
 } from './scanner-core.js?v=20261015-compact-qr-v29';
 import {
-  createVisualSignature,
-  documentVisualFingerprintsMatch,
-} from './document-recognizer-core.js?v=20261014-document-allowlist-v26';
-import {
   cancelDocumentRecognition,
   disposeDocumentRecognizer,
   recognizeDocumentCanvas,
@@ -59,9 +55,7 @@ const RELAY_RECOVERY_DELAY_MS = 900;
 const UPLOAD_CONCURRENCY = 4;
 const TAX_ID_PAGE_WIDTH = 1_400;
 const TAX_ID_PAGE_HEIGHT = 1_980;
-const DOCUMENT_RECOGNITION_STABLE_MS = 450;
-const DOCUMENT_RECOGNITION_VALID_MS = 15_000;
-const DOCUMENT_RECOGNITION_RETRY_MS = 6_000;
+const CAMERA_FRAME_INSTRUCTION = 'Ausweis vollständig in den Rahmen halten.';
 
 const elements = Object.fromEntries(
   [
@@ -167,64 +161,48 @@ let activeViewAnimation = null;
 let activeViewAnimationTarget = null;
 let previewReturnState = 'dashboard';
 let expandedPreviewFocusTarget = null;
-let documentRecognitionGeneration = 0;
-let documentCandidateSince = 0;
-let documentRecognition = {
-  status: 'idle',
-  slot: '',
-  signature: null,
-  result: null,
-  checkedAt: 0,
-  retryAt: 0,
-};
-
 const SLOT_PROFILES = Object.freeze({
   front: {
     title: 'Vorderseite Personalausweis',
     aspectRatio: ID_CARD_ASPECT_RATIO,
     captureOrientation: 'landscape',
-    instruction: 'Handy waagerecht halten. Ausweis quer in den Rahmen halten.',
+    instruction: CAMERA_FRAME_INSTRUCTION,
   },
   back: {
     title: 'Rückseite Personalausweis',
     aspectRatio: ID_CARD_ASPECT_RATIO,
     captureOrientation: 'landscape',
-    instruction: 'Handy waagerecht halten. Ausweis quer in den Rahmen halten.',
+    instruction: CAMERA_FRAME_INSTRUCTION,
   },
   'id-front': {
     title: 'Vorderseite Personalausweis',
     aspectRatio: ID_CARD_ASPECT_RATIO,
     captureOrientation: 'landscape',
-    instruction:
-      'Handy waagerecht halten. Personalausweis quer in den Rahmen halten.',
+    instruction: CAMERA_FRAME_INSTRUCTION,
   },
   'id-back': {
     title: 'Rückseite Personalausweis',
     aspectRatio: ID_CARD_ASPECT_RATIO,
     captureOrientation: 'landscape',
-    instruction:
-      'Handy waagerecht halten. Personalausweis quer in den Rahmen halten.',
+    instruction: CAMERA_FRAME_INSTRUCTION,
   },
   'passport-data': {
     title: 'Datenseite Reisepass',
     aspectRatio: PASSPORT_ASPECT_RATIO,
     captureOrientation: 'landscape',
-    instruction:
-      'Handy waagerecht halten. Datenseite quer in den Rahmen halten.',
+    instruction: CAMERA_FRAME_INSTRUCTION,
   },
   'health-front': {
     title: 'Vorderseite Krankenkassenkarte',
     aspectRatio: ID_CARD_ASPECT_RATIO,
     captureOrientation: 'landscape',
-    instruction:
-      'Handy waagerecht halten. Krankenkassenkarte quer in den Rahmen halten.',
+    instruction: CAMERA_FRAME_INSTRUCTION,
   },
   'health-back': {
     title: 'Rückseite Krankenkassenkarte',
     aspectRatio: ID_CARD_ASPECT_RATIO,
     captureOrientation: 'landscape',
-    instruction:
-      'Handy waagerecht halten. Krankenkassenkarte quer in den Rahmen halten.',
+    instruction: CAMERA_FRAME_INSTRUCTION,
   },
   'tax-id': {
     title: 'Steueridentifikationsnummer',
@@ -245,10 +223,6 @@ function activeProfile() {
 
 function sideTitle() {
   return activeProfile().title;
-}
-
-function guideOrientationStatus() {
-  return 'Oberkante oben. Handy waagerecht halten.';
 }
 
 function applyProfileVisuals() {
@@ -274,24 +248,6 @@ function setGuide(valid) {
   elements.idGuide.classList.toggle('is-red', !valid);
 }
 
-function emptyDocumentRecognition() {
-  return {
-    status: 'idle',
-    slot: '',
-    signature: null,
-    result: null,
-    checkedAt: 0,
-    retryAt: 0,
-  };
-}
-
-function resetLiveDocumentRecognition({ cancelPending = false } = {}) {
-  documentRecognitionGeneration += 1;
-  documentCandidateSince = 0;
-  documentRecognition = emptyDocumentRecognition();
-  if (cancelPending) void cancelDocumentRecognition();
-}
-
 function documentRecognitionMessage(result) {
   if (result?.reason === 'wrong-document') {
     return 'Das ausgewählte Dokument liegt noch nicht passend im Rahmen.';
@@ -303,96 +259,6 @@ function documentRecognitionMessage(result) {
     return result.reason;
   }
   return 'Dokumenttyp nicht eindeutig erkannt. Bitte vollständig und lesbar ausrichten.';
-}
-
-function recognizedCurrentDocument(signature, timestamp) {
-  return Boolean(
-    documentRecognition.status === 'accepted' &&
-    documentRecognition.slot === side &&
-    timestamp - documentRecognition.checkedAt <=
-      DOCUMENT_RECOGNITION_VALID_MS &&
-    documentVisualFingerprintsMatch(documentRecognition.signature, signature),
-  );
-}
-
-function rejectedCurrentDocument(signature, timestamp) {
-  return Boolean(
-    documentRecognition.status === 'rejected' &&
-    documentRecognition.slot === side &&
-    timestamp < documentRecognition.retryAt &&
-    documentVisualFingerprintsMatch(documentRecognition.signature, signature),
-  );
-}
-
-function queueLiveDocumentRecognition(signature) {
-  if (
-    documentRecognition.status === 'pending' ||
-    state !== 'scanning' ||
-    sessionClosed
-  ) {
-    return;
-  }
-  const recognitionCanvas = captureGuideCanvasForRecognition();
-  if (!recognitionCanvas) return;
-  const generation = ++documentRecognitionGeneration;
-  const recognitionSlot = side;
-  documentRecognition = {
-    status: 'pending',
-    slot: recognitionSlot,
-    signature,
-    result: null,
-    checkedAt: 0,
-    retryAt: 0,
-  };
-  setGuide(false);
-  setCameraMessage(
-    activeProfile().instruction,
-    'Bitte stillhalten. Dokument wird geprüft …',
-  );
-
-  void recognizeDocumentCanvas(recognitionCanvas, recognitionSlot)
-    .then((result) => {
-      if (
-        generation !== documentRecognitionGeneration ||
-        state !== 'scanning' ||
-        sessionClosed ||
-        side !== recognitionSlot
-      ) {
-        return;
-      }
-      const checkedAt = performance.now();
-      documentRecognition = {
-        status: result.accepted ? 'accepted' : 'rejected',
-        slot: recognitionSlot,
-        signature,
-        result,
-        checkedAt,
-        retryAt: result.accepted
-          ? 0
-          : checkedAt + DOCUMENT_RECOGNITION_RETRY_MS,
-      };
-    })
-    .catch(() => {
-      if (generation !== documentRecognitionGeneration) return;
-      const checkedAt = performance.now();
-      documentRecognition = {
-        status: 'rejected',
-        slot: recognitionSlot,
-        signature,
-        result: {
-          accepted: false,
-          code: 'recognition-unavailable',
-          reason:
-            'Der Dokumenttyp konnte lokal nicht geprüft werden. Bitte erneut versuchen.',
-        },
-        checkedAt,
-        retryAt: checkedAt + DOCUMENT_RECOGNITION_RETRY_MS,
-      };
-    })
-    .finally(() => {
-      recognitionCanvas.width = 0;
-      recognitionCanvas.height = 0;
-    });
 }
 
 function phoneViewportIsLandscape() {
@@ -417,7 +283,7 @@ function updatePhoneOrientation() {
   elements.rotatePhone.hidden = !needsLandscape;
   if (!needsLandscape) return true;
 
-  stopAnalysis();
+  stopAnalysis({ cancelRecognition: false });
   holdState = createHoldState();
   lastPositionedBox = null;
   lastAnalysisAt = 0;
@@ -439,7 +305,7 @@ function schedulePhoneOrientationRefresh() {
       ) {
         return;
       }
-      stopAnalysis();
+      stopAnalysis({ cancelRecognition: false });
       holdState = createHoldState();
       lastPositionedBox = null;
       lastAnalysisAt = 0;
@@ -676,7 +542,7 @@ function stopAnalysis({ cancelRecognition = true } = {}) {
   cancelAnimationFrame(analysisFrame);
   analysisFrame = 0;
   elements.countdown.textContent = '';
-  resetLiveDocumentRecognition({ cancelPending: cancelRecognition });
+  if (cancelRecognition) void cancelDocumentRecognition();
 }
 
 function stopStreamTracks(stream) {
@@ -1046,6 +912,41 @@ function visibleFrame(canvas, source, sourceWidth, sourceHeight) {
   };
 }
 
+function applyLiveObservation(observation, timestamp, frameSize) {
+  if (!observation.documentPresent) {
+    holdState = createHoldState();
+    lastPositionedBox = null;
+  } else {
+    holdState = updateHoldState(holdState, observation, timestamp, frameSize);
+    if (observation.positioned) lastPositionedBox = observation.box;
+    else if (!holdState.holding) lastPositionedBox = null;
+  }
+
+  const visuallyValid = Boolean(
+    observation.documentPresent &&
+    (observation.positioned || holdState.holding),
+  );
+  setGuide(visuallyValid);
+  elements.sideLabel.textContent = sideTitle();
+  if (visuallyValid) {
+    elements.cameraStatus.textContent = `Bitte stillhalten · Aufnahme in ${Math.max(
+      1,
+      holdState.countdown,
+    )} …`;
+    elements.countdown.textContent = holdState.countdown || '';
+  } else {
+    elements.cameraStatus.textContent = CAMERA_FRAME_INSTRUCTION;
+    elements.countdown.textContent = '';
+  }
+  return visuallyValid;
+}
+
+function shouldCaptureAutomatically(observation) {
+  return Boolean(
+    holdState.ready && observation.documentPresent && lastPositionedBox,
+  );
+}
+
 function beginAnalysis() {
   if (
     sessionClosed ||
@@ -1063,7 +964,7 @@ function beginAnalysis() {
   setGuide(false);
   applyProfileVisuals();
   if (!updatePhoneOrientation()) return;
-  setCameraMessage(activeProfile().instruction, guideOrientationStatus());
+  setCameraMessage(activeProfile().instruction);
   const generation = analysisGeneration;
   const loop = (timestamp) => {
     if (
@@ -1092,121 +993,22 @@ function beginAnalysis() {
           requireDocumentPresence: true,
           slot: side,
         });
-        const signature = createVisualSignature(image, frame.guideRect);
         image.data.fill(0);
-        const geometryReady = Boolean(
-          observation.documentPresent && observation.positioned && signature,
-        );
-        let semanticAccepted = recognizedCurrentDocument(signature, timestamp);
-
-        if (!observation.documentPresent || !signature) {
-          holdState = createHoldState();
-          lastPositionedBox = null;
-          documentCandidateSince = 0;
-        } else if (semanticAccepted) {
-          holdState = updateHoldState(holdState, observation, timestamp, {
-            width: elements.analysisCanvas.width,
-            height: elements.analysisCanvas.height,
-          });
-          if (observation.positioned) lastPositionedBox = observation.box;
-        } else if (!observation.positioned) {
-          holdState = createHoldState();
-          lastPositionedBox = null;
-          documentCandidateSince = 0;
-        } else {
-          if (!documentCandidateSince) documentCandidateSince = timestamp;
-          const samePendingDocument = Boolean(
-            documentRecognition.status === 'pending' &&
-            documentRecognition.slot === side &&
-            documentVisualFingerprintsMatch(
-              documentRecognition.signature,
-              signature,
-            ),
-          );
-          const sameStoredDocument = Boolean(
-            documentRecognition.slot === side &&
-            documentVisualFingerprintsMatch(
-              documentRecognition.signature,
-              signature,
-            ),
-          );
-          if (documentRecognition.status !== 'idle' && !sameStoredDocument) {
-            resetLiveDocumentRecognition({ cancelPending: true });
-            documentCandidateSince = timestamp;
-            semanticAccepted = false;
-          }
-          if (
-            !semanticAccepted &&
-            !samePendingDocument &&
-            !rejectedCurrentDocument(signature, timestamp) &&
-            timestamp - documentCandidateSince >= DOCUMENT_RECOGNITION_STABLE_MS
-          ) {
-            queueLiveDocumentRecognition(signature);
-          }
-          semanticAccepted = recognizedCurrentDocument(signature, timestamp);
-          if (semanticAccepted) {
-            holdState = updateHoldState(holdState, observation, timestamp, {
-              width: elements.analysisCanvas.width,
-              height: elements.analysisCanvas.height,
-            });
-            if (observation.positioned) lastPositionedBox = observation.box;
-          } else {
-            holdState = createHoldState();
-            lastPositionedBox = null;
-          }
-        }
-        const visuallyValid =
-          semanticAccepted && (observation.positioned || holdState.holding);
-        setGuide(visuallyValid);
-        if (visuallyValid) {
-          elements.sideLabel.textContent = sideTitle();
-          elements.cameraStatus.textContent = `Bitte stillhalten · Aufnahme in ${Math.max(
-            1,
-            holdState.countdown,
-          )} …`;
-          elements.countdown.textContent = holdState.countdown || '';
-        } else if (documentRecognition.status === 'pending' && geometryReady) {
-          elements.sideLabel.textContent = sideTitle();
-          elements.cameraStatus.textContent =
-            'Bitte stillhalten. Dokument wird geprüft …';
-          elements.countdown.textContent = '';
-        } else if (
-          documentRecognition.status === 'rejected' &&
-          documentRecognition.slot === side &&
-          documentVisualFingerprintsMatch(
-            documentRecognition.signature,
-            signature,
-          )
-        ) {
-          elements.sideLabel.textContent = sideTitle();
-          elements.cameraStatus.textContent = documentRecognitionMessage(
-            documentRecognition.result,
-          );
-          elements.countdown.textContent = '';
-        } else {
-          elements.sideLabel.textContent = sideTitle();
-          elements.cameraStatus.textContent = `${observation.reason} ${guideOrientationStatus()}`;
-          elements.countdown.textContent = '';
-        }
+        applyLiveObservation(observation, timestamp, {
+          width: elements.analysisCanvas.width,
+          height: elements.analysisCanvas.height,
+        });
         // `updateHoldState` keeps a short grace window for one noisy camera
         // frame.  Once the three seconds are complete, use the last stable
         // box even if this exact frame briefly failed edge detection; waiting
         // for another positioned frame was the source of late/missed shots.
-        if (
-          holdState.ready &&
-          semanticAccepted &&
-          observation.documentPresent &&
-          lastPositionedBox
-        ) {
+        if (shouldCaptureAutomatically(observation)) {
           void captureAutomatically();
           return;
         }
       } catch {
         setGuide(false);
-        setCameraMessage(
-          activeProfile().instruction,
-          'Bitte das Dokument ruhig in den Rahmen halten.',
-        );
+        setCameraMessage(CAMERA_FRAME_INSTRUCTION);
       }
     }
     analysisFrame = requestAnimationFrame(loop);
@@ -1238,72 +1040,6 @@ function captureVideoFrame() {
     },
     kind: 'video',
   };
-}
-
-function captureGuideCanvasForRecognition() {
-  const still = captureVideoFrame();
-  if (!still) return null;
-  const canvas = document.createElement('canvas');
-  try {
-    const stageRect = elements.cameraStage.getBoundingClientRect();
-    const guideClient = elements.idGuide.getBoundingClientRect();
-    if (
-      stageRect.width <= 0 ||
-      stageRect.height <= 0 ||
-      guideClient.width <= 0 ||
-      guideClient.height <= 0
-    ) {
-      return null;
-    }
-    const stageGuideRect = {
-      x: guideClient.left - stageRect.left,
-      y: guideClient.top - stageRect.top,
-      width: guideClient.width,
-      height: guideClient.height,
-    };
-    const sourceBox = guideCropInSource(
-      stageGuideRect,
-      still.width,
-      still.height,
-      stageRect.width,
-      stageRect.height,
-    );
-    const portraitGuide = activeProfile().captureOrientation === 'portrait';
-    const crop = normalizedIdCrop(
-      sourceBox,
-      still.width,
-      still.height,
-      0,
-      portraitGuide ? 'portrait' : 'landscape',
-      activeProfile().aspectRatio,
-    );
-    const width = Math.max(1, Math.floor(Math.min(1_800, crop.width)));
-    const height = Math.max(1, Math.floor(width / activeProfile().aspectRatio));
-    canvas.width = width;
-    canvas.height = height;
-    const context = canvas.getContext('2d', { alpha: false });
-    if (!context) return null;
-    context.imageSmoothingEnabled = true;
-    context.imageSmoothingQuality = 'high';
-    if (portraitGuide) {
-      drawPortraitCropAsLandscape(context, still.source, crop, width, height);
-    } else {
-      context.drawImage(
-        still.source,
-        crop.x,
-        crop.y,
-        crop.width,
-        crop.height,
-        0,
-        0,
-        width,
-        height,
-      );
-    }
-    return canvas;
-  } finally {
-    still.close();
-  }
 }
 
 async function canvasToJpeg(canvas) {
@@ -1606,10 +1342,6 @@ async function produceCapture() {
         },
       };
     }
-    // Signal success only after the exact frozen frame has independently
-    // passed the selected document-type check.
-    triggerCaptureFeedback();
-
     const outputWidth =
       still.kind === 'video' && nativeWidth < VIDEO_FALLBACK_OUTPUT_LONG_EDGE
         ? VIDEO_FALLBACK_OUTPUT_LONG_EDGE
@@ -2089,9 +1821,10 @@ async function captureAutomatically() {
   setGuide(true);
   elements.countdown.textContent = '';
   setCameraMessage(
-    'Aufnahme wird geprüft …',
-    '3–2–1 abgeschlossen. Das eingefrorene Bild wird lokal geprüft.',
+    activeProfile().instruction,
+    'Bitte stillhalten. Dokument wird geprüft …',
   );
+  triggerCaptureFeedback();
   try {
     const result = await produceCapture();
     if (sessionClosed) return;

@@ -84,7 +84,7 @@ test('standalone page contains a live camera guide without external code', async
   assert.match(html, /id="countdown"/);
   assert.match(html, /id="rotate-phone"/);
   assert.match(html, /Handy waagerecht drehen/);
-  assert.match(html, /scanner\.js\?v=20261015-compact-qr-v29/);
+  assert.match(html, /scanner\.js\?v=20261015-reliable-capture-v30/);
   assert.match(html, /styles\.css\?v=20261014-passport-landscape-v24/);
   assert.match(html, /<title>Sicherheit Nord · Ausweisscan<\/title>/);
   assert.match(
@@ -177,9 +177,16 @@ test('standalone page contains a live camera guide without external code', async
   assert.match(html, /script-src 'self'/);
   assert.doesNotMatch(html, /<script[^>]+src="https:/);
   assert.match(script, /navigator\.mediaDevices\.getUserMedia/);
-  assert.match(script, /Oberkante oben\. Handy waagerecht halten\./);
+  assert.match(
+    script,
+    /CAMERA_FRAME_INSTRUCTION = 'Ausweis vollständig in den Rahmen halten\.'/,
+  );
+  assert.doesNotMatch(script, /Oberkante oben|Handy waagerecht halten/);
   assert.match(script, /Bitte stillhalten\. Dokument wird geprüft …/);
-  assert.match(script, /Bitte das Dokument ruhig in den Rahmen halten\./);
+  assert.doesNotMatch(
+    script,
+    /Bitte das Dokument ruhig in den Rahmen halten\./,
+  );
   assert.match(script, /Bitte das Dokument bereithalten\./);
   assert.match(script, /setCameraMessage\(activeProfile\(\)\.instruction\);/);
   assert.doesNotMatch(
@@ -220,7 +227,7 @@ test('standalone page contains a live camera guide without external code', async
   assert.match(script, /activeVideoTrack[\s\S]+?torch: false/);
   assert.match(
     script,
-    /holdState\.ready &&[\s\S]+?observation\.documentPresent &&[\s\S]+?lastPositionedBox/,
+    /function shouldCaptureAutomatically\(observation\)[\s\S]+?holdState\.ready && observation\.documentPresent && lastPositionedBox/,
   );
   assert.match(
     script,
@@ -228,7 +235,7 @@ test('standalone page contains a live camera guide without external code', async
   );
   assert.match(
     script,
-    /if \(!observation\.documentPresent \|\| !signature\) \{[\s\S]+?holdState = createHoldState\(\);[\s\S]+?lastPositionedBox = null/,
+    /function applyLiveObservation\(observation, timestamp, frameSize\)[\s\S]+?if \(!observation\.documentPresent\) \{[\s\S]+?holdState = createHoldState\(\);[\s\S]+?lastPositionedBox = null/,
   );
   assert.match(
     script,
@@ -248,10 +255,6 @@ test('standalone page contains a live camera guide without external code', async
     'if (!recognition.accepted)',
     frozenDocumentTypeGate,
   );
-  const captureFeedback = script.indexOf(
-    'triggerCaptureFeedback();',
-    capturePreparation,
-  );
   const jpegEncoding = script.indexOf(
     'canvasToJpeg(canvas)',
     capturePreparation,
@@ -260,9 +263,24 @@ test('standalone page contains a live camera guide without external code', async
     frozenGate >= 0 &&
       frozenDocumentTypeGate > frozenGate &&
       rejectedDocumentTypeGate > frozenDocumentTypeGate &&
-      captureFeedback > rejectedDocumentTypeGate &&
-      jpegEncoding > captureFeedback,
-    'feedback must happen after frozen-frame geometry and document-type validation but before JPEG encoding',
+      jpegEncoding > rejectedDocumentTypeGate,
+    'the frozen frame must pass geometry and the selected document-type check before encoding',
+  );
+  assert.match(script, /if \(!recognition\.accepted\)/);
+  const automaticCapture = script.indexOf(
+    'async function captureAutomatically',
+  );
+  const captureFeedback = script.indexOf(
+    'triggerCaptureFeedback();',
+    automaticCapture,
+  );
+  const frozenCapture = script.indexOf(
+    'const result = await produceCapture();',
+    automaticCapture,
+  );
+  assert.ok(
+    captureFeedback > automaticCapture && frozenCapture > captureFeedback,
+    'capture feedback must happen immediately at the 3-2-1 boundary before frozen-frame processing',
   );
   assert.match(script, /const still = captureVideoFrame\(\)/);
   assert.match(script, /guideCropInSource\(/);
@@ -274,17 +292,9 @@ test('standalone page contains a live camera guide without external code', async
     (script.match(/captureOrientation: 'landscape'/g) ?? []).length,
     8,
   );
-  assert.match(
-    script,
-    /'passport-data':\s*\{[\s\S]*?aspectRatio: PASSPORT_ASPECT_RATIO,[\s\S]*?captureOrientation: 'landscape',[\s\S]*?Datenseite quer in den Rahmen halten\./,
-  );
   assert.equal(
-    (
-      script.match(
-        /Handy waagerecht halten\. (?:Personalausweis|Krankenkassenkarte|Ausweis) quer in den Rahmen halten\./g,
-      ) ?? []
-    ).length,
-    6,
+    (script.match(/instruction: CAMERA_FRAME_INSTRUCTION/g) ?? []).length,
+    7,
   );
   assert.doesNotMatch(script, /PORTRAIT_GUIDE_|ID_CARD_GUIDE_|guideOutline/);
   assert.match(
@@ -322,10 +332,7 @@ test('standalone page contains a live camera guide without external code', async
   assert.match(script, /prepareEncryptedCapture/);
   assert.match(script, /protocolVersion,/);
   assert.match(script, /scanner-core\.js\?v=20261015-compact-qr-v29/);
-  assert.match(
-    script,
-    /document-recognizer-core\.js\?v=20261014-document-allowlist-v26/,
-  );
+  assert.doesNotMatch(script, /document-recognizer-core\.js/);
   assert.match(
     script,
     /document-recognizer\.js\?v=20261014-document-allowlist-v26/,
@@ -334,16 +341,21 @@ test('standalone page contains a live camera guide without external code', async
   assert.match(script, /recognizeDocumentCanvas\(canvas, capturedSlot\)/);
   assert.match(script, /recognizeDocumentCanvas\(canvas, 'tax-id'\)/);
   assert.match(script, /cancelDocumentRecognition/);
+  assert.doesNotMatch(script, /resetLiveDocumentRecognition/);
+  assert.match(script, /function stopCamera\(\) \{[\s\S]+?stopAnalysis\(\);/);
   assert.match(
     script,
-    /resetLiveDocumentRecognition\(\{ cancelPending: true \}\)/,
+    /function updatePhoneOrientation\(\)[\s\S]+?stopAnalysis\(\{ cancelRecognition: false \}\)/,
   );
-  assert.match(script, /function stopCamera\(\) \{[\s\S]+?stopAnalysis\(\);/);
+  assert.match(
+    script,
+    /function schedulePhoneOrientationRefresh\(\)[\s\S]+?stopAnalysis\(\{ cancelRecognition: false \}\)/,
+  );
   assert.match(
     script,
     /async function captureAutomatically\(\)[\s\S]+?stopAnalysis\(\{ cancelRecognition: false \}\)/,
   );
-  assert.match(script, /documentVisualFingerprintsMatch\(/);
+  assert.doesNotMatch(script, /documentVisualFingerprintsMatch\(/);
   assert.match(script, /Bitte stillhalten\. Dokument wird geprüft/);
   assert.match(script, /callRelayWithRecovery\(/);
   assert.match(script, /'claim'[\s\S]+?shouldContinue: \(\) => !sessionClosed/);
@@ -857,6 +869,29 @@ export function cameraLifecycleState() {
     hasCameraRequest: Boolean(cameraRequest),
   };
 }
+export function prepareLiveCaptureProgressTest() {
+  state = 'scanning';
+  sessionClosed = false;
+  holdState = createHoldState();
+  lastPositionedBox = null;
+  setGuide(false);
+  elements.countdown.textContent = '';
+  elements.cameraStatus.textContent = activeProfile().instruction;
+}
+export function advanceLiveCaptureProgressTest(observation, timestamp) {
+  const valid = applyLiveObservation(observation, timestamp, {
+    width: 480,
+    height: 270,
+  });
+  return {
+    valid,
+    ready: shouldCaptureAutomatically(observation),
+    green: elements.idGuide.classList.contains('is-green'),
+    red: elements.idGuide.classList.contains('is-red'),
+    countdown: elements.countdown.textContent,
+    status: elements.cameraStatus.textContent,
+  };
+}
 export function prepareTorchLifecycleTest(track, enabled = false) {
   torchOperationId += 1;
   activeVideoTrack = track;
@@ -1057,6 +1092,59 @@ export function torchLifecycleState() {
     );
     const firstStream = createStream();
     const secondStream = createStream();
+
+    const positionedDocument = {
+      positioned: true,
+      documentPresent: true,
+      reason: 'Dokument erkannt. Position passt. Bitte ruhig halten.',
+      box: { x: 40, y: 30, width: 400, height: 210 },
+    };
+    scanner.prepareLiveCaptureProgressTest();
+    assert.deepEqual(
+      scanner.advanceLiveCaptureProgressTest(positionedDocument, 0),
+      {
+        valid: true,
+        ready: false,
+        green: true,
+        red: false,
+        countdown: 3,
+        status: 'Bitte stillhalten · Aufnahme in 3 …',
+      },
+    );
+    assert.equal(
+      scanner.advanceLiveCaptureProgressTest(positionedDocument, 1_001)
+        .countdown,
+      2,
+    );
+    assert.equal(
+      scanner.advanceLiveCaptureProgressTest(positionedDocument, 2_001)
+        .countdown,
+      1,
+    );
+    const completedHold = scanner.advanceLiveCaptureProgressTest(
+      positionedDocument,
+      3_000,
+    );
+    assert.equal(completedHold.ready, true);
+    assert.equal(completedHold.green, true);
+    const missingDocument = scanner.advanceLiveCaptureProgressTest(
+      {
+        positioned: false,
+        documentPresent: false,
+        reason:
+          'Kein Dokument erkannt. Bitte nur den Ausweis oder Pass in den Rahmen halten.',
+        box: null,
+      },
+      3_150,
+    );
+    assert.deepEqual(missingDocument, {
+      valid: false,
+      ready: false,
+      green: false,
+      red: true,
+      countdown: '',
+      status: 'Ausweis vollständig in den Rahmen halten.',
+    });
 
     scanner.prepareOrientationLifecycleTest();
     assert.equal(scanner.phoneViewportIsLandscape(), true);
