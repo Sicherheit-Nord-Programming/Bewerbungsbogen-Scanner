@@ -915,7 +915,13 @@ function projectionRegularity(values) {
   };
 }
 
-function documentTextureMetrics(gray, box, quad, slot = 'generic') {
+function documentTextureMetrics(
+  gray,
+  box,
+  quad,
+  slot = 'generic',
+  { live = false } = {},
+) {
   const sample = sampledDocumentRegion(gray, box, quad);
   const { data, width, height } = sample;
   const sorted = Array.from(data).sort((left, right) => left - right);
@@ -941,6 +947,13 @@ function documentTextureMetrics(gray, box, quad, slot = 'generic') {
   const strokes = new Uint8Array(width * height);
   let strokePixels = 0;
   const radius = 4;
+  // The live preview is intentionally analysed on a compact grid. Phone
+  // autofocus and motion blur can reduce otherwise legible characters to
+  // only a few grey levels there. Use the lower threshold only for the
+  // positioning preview; the frozen full-resolution frame keeps the
+  // stricter document and quality gates below.
+  const localContrast = live ? 7 : 12;
+  const percentileOffset = live ? 3 : 6;
   for (let y = 1; y < height - 1; y += 1) {
     for (let x = 1; x < width - 1; x += 1) {
       const left = Math.max(0, x - radius);
@@ -955,7 +968,10 @@ function documentTextureMetrics(gray, box, quad, slot = 'generic') {
         integral[top * stride + left];
       const localMean = sum / area;
       const index = y * width + x;
-      if (localMean - data[index] >= 12 && data[index] <= p75 - 6) {
+      if (
+        localMean - data[index] >= localContrast &&
+        data[index] <= p75 - percentileOffset
+      ) {
         strokes[index] = 1;
         strokePixels += 1;
       }
@@ -1095,6 +1111,22 @@ function documentTextureMetrics(gray, box, quad, slot = 'generic') {
     occupiedTiles.size >= 8;
   const gridLike = twoAxisGridLike || staggeredKeyGridLike;
   const minimumComponents = slot === 'passport-data' ? 10 : 8;
+  const strongKeyboardPattern =
+    staggeredKeyGridLike ||
+    (gridLike &&
+      edgeDensity >= 0.08 &&
+      textComponents.length >= 20 &&
+      textBands >= 4 &&
+      occupiedTiles.size >= 6);
+  const liveAccepted =
+    brightness >= 36 &&
+    p90 - p10 >= 8 &&
+    edgeDensity >= 0.0025 &&
+    edgeDensity <= 0.46 &&
+    textComponents.length >= 3 &&
+    textBands >= 1 &&
+    occupiedTiles.size >= 2 &&
+    !strongKeyboardPattern;
   const accepted =
     brightness >= 52 &&
     p75 >= 72 &&
@@ -1116,6 +1148,8 @@ function documentTextureMetrics(gray, box, quad, slot = 'generic') {
     occupiedTiles: occupiedTiles.size,
     gridLike,
     staggeredKeyGridLike,
+    strongKeyboardPattern,
+    liveAccepted,
     verticalRegularity,
     horizontalRegularity,
   };
@@ -1342,25 +1376,25 @@ export function analyzeFramePosition(
         gray,
         quad.topLeft,
         quad.bottomLeft,
-        guide.width * (requireDocumentPresence ? 0.12 : 0.2),
+        guide.width * 0.2,
       ),
       right: searchSegmentEdge(
         gray,
         quad.topRight,
         quad.bottomRight,
-        guide.width * (requireDocumentPresence ? 0.12 : 0.2),
+        guide.width * 0.2,
       ),
       top: searchSegmentEdge(
         gray,
         quad.topLeft,
         quad.topRight,
-        guide.height * (requireDocumentPresence ? 0.14 : 0.22),
+        guide.height * (requireDocumentPresence ? 0.2 : 0.22),
       ),
       bottom: searchSegmentEdge(
         gray,
         quad.bottomLeft,
         quad.bottomRight,
-        guide.height * (requireDocumentPresence ? 0.14 : 0.22),
+        guide.height * (requireDocumentPresence ? 0.2 : 0.22),
       ),
     };
     const strongEdges = Object.values(edges).filter(edgeIsStrong).length;
@@ -1452,15 +1486,22 @@ export function analyzeFramePosition(
     : interiorDetail(gray, guide);
   const hasContent = detail >= 0.006;
   const texture = requireDocumentPresence
-    ? documentTextureMetrics(gray, detectedBounds, bestMatch.detectedQuad, slot)
+    ? documentTextureMetrics(
+        gray,
+        detectedBounds,
+        bestMatch.detectedQuad,
+        slot,
+        { live: true },
+      )
     : null;
   const boundaryAccepted =
     geometryCoherent &&
-    bestMatch.documentEdges >= 3 &&
-    bestMatch.uniqueEdges >= 2 &&
-    bestMatch.consistentPolarity >= 2;
+    bestMatch.documentEdges >= 2 &&
+    bestMatch.strongEdges >= 3 &&
+    bestMatch.uniqueEdges >= 1 &&
+    bestMatch.consistentPolarity >= 1;
   const documentPresent = requireDocumentPresence
-    ? Boolean(texture?.accepted)
+    ? Boolean(texture?.liveAccepted)
     : hasContent;
   const positioned = requireDocumentPresence
     ? boundaryAccepted && documentPresent

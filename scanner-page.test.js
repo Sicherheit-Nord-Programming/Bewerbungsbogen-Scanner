@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
+import { runInNewContext } from 'node:vm';
 
 const directory = new URL('./', import.meta.url);
 
@@ -84,9 +85,17 @@ test('standalone page contains a live camera guide without external code', async
   assert.match(html, /id="countdown"/);
   assert.match(html, /id="rotate-phone"/);
   assert.match(html, /Handy waagerecht drehen/);
-  assert.match(html, /scanner\.js\?v=20261015-reliable-capture-v30/);
-  assert.match(html, /styles\.css\?v=20261014-passport-landscape-v24/);
-  assert.match(html, /<title>Sicherheit Nord · Ausweisscan<\/title>/);
+  assert.match(html, /bootstrap-hash\.js\?v=20261015-clean-url-v31/);
+  assert.match(html, /scanner\.js\?v=20261015-live-gate-v32/);
+  assert.match(html, /styles\.css\?v=20261015-live-gate-v32/);
+  assert.match(html, /<title>Sicherheit Nord<\/title>/);
+  assert.match(html, /<meta property="og:title" content="Sicherheit Nord" \/>/);
+  const legacyRedirectPosition = html.indexOf('legacy-redirect.js');
+  const bootstrapHashPosition = html.indexOf('bootstrap-hash.js');
+  const scannerModulePosition = html.indexOf('type="module"');
+  assert.ok(legacyRedirectPosition >= 0);
+  assert.ok(bootstrapHashPosition > legacyRedirectPosition);
+  assert.ok(scannerModulePosition > bootstrapHashPosition);
   assert.match(
     html,
     /rel="canonical" href="https:\/\/sicherheit-nord-ausweisscan\.web\.app\/"/,
@@ -227,7 +236,7 @@ test('standalone page contains a live camera guide without external code', async
   assert.match(script, /activeVideoTrack[\s\S]+?torch: false/);
   assert.match(
     script,
-    /function shouldCaptureAutomatically\(observation\)[\s\S]+?holdState\.ready && observation\.documentPresent && lastPositionedBox/,
+    /function shouldCaptureAutomatically\(\)[\s\S]+?holdState\.ready && lastPositionedBox/,
   );
   assert.match(
     script,
@@ -235,7 +244,7 @@ test('standalone page contains a live camera guide without external code', async
   );
   assert.match(
     script,
-    /function applyLiveObservation\(observation, timestamp, frameSize\)[\s\S]+?if \(!observation\.documentPresent\) \{[\s\S]+?holdState = createHoldState\(\);[\s\S]+?lastPositionedBox = null/,
+    /function applyLiveObservation\(observation, timestamp, frameSize\)[\s\S]+?holdState = updateHoldState\([\s\S]+?holdState\.holding && lastPositionedBox/,
   );
   assert.match(
     script,
@@ -331,7 +340,7 @@ test('standalone page contains a live camera guide without external code', async
   );
   assert.match(script, /prepareEncryptedCapture/);
   assert.match(script, /protocolVersion,/);
-  assert.match(script, /scanner-core\.js\?v=20261015-compact-qr-v29/);
+  assert.match(script, /scanner-core\.js\?v=20261015-live-gate-v32/);
   assert.doesNotMatch(script, /document-recognizer-core\.js/);
   assert.match(
     script,
@@ -384,12 +393,25 @@ test('standalone page contains a live camera guide without external code', async
   assert.match(script, /deriveCompactStaticPairing\(/);
   assert.match(script, /decryptStaticBootstrap\(\{/);
   assert.match(script, /parseDiscoveredScannerBootstrap\(decrypted/);
-  const hashRead = script.indexOf('let bootstrapHash = window.location.hash;');
-  const hashRemoval = script.indexOf('window.history.replaceState(', hashRead);
+  const hashReader = script.indexOf('function takeScannerBootstrapHash()');
+  const stashedHashRead = script.indexOf(
+    'typeof window.__SN_SCANNER_BOOTSTRAP_HASH__',
+    hashReader,
+  );
+  const stashedHashRemoval = script.indexOf(
+    'delete window.__SN_SCANNER_BOOTSTRAP_HASH__',
+    stashedHashRead,
+  );
+  const hashRead = script.indexOf(
+    'let bootstrapHash = takeScannerBootstrapHash();',
+    stashedHashRemoval,
+  );
   const hashParse = script.indexOf('parseScannerBootstrap(bootstrapHash)');
-  assert.ok(hashRead >= 0);
-  assert.ok(hashRemoval > hashRead);
-  assert.ok(hashParse > hashRemoval);
+  assert.ok(hashReader >= 0);
+  assert.ok(stashedHashRead > hashReader);
+  assert.ok(stashedHashRemoval > stashedHashRead);
+  assert.ok(hashRead > stashedHashRemoval);
+  assert.ok(hashParse > hashRead);
   assert.match(
     script,
     /request\.slots = \[\.\.\.completedSlots\]\.sort\([\s\S]+?localeCompare/,
@@ -682,6 +704,47 @@ test('standalone page contains a live camera guide without external code', async
   );
 });
 
+test('secure bootstrap fragment is hidden synchronously without breaking a legacy redirect', async () => {
+  const bootstrapScript = await readFile(
+    new URL('bootstrap-hash.js', directory),
+    'utf8',
+  );
+  const createWindow = ({ redirecting = false } = {}) => {
+    const replacements = [];
+    const location = {
+      hash: '#vG0123456789ABCDEFGHIJ',
+      pathname: '/scan',
+      search: '?source=qr',
+    };
+    const window = {
+      location,
+      history: {
+        replaceState(_state, _title, url) {
+          replacements.push(url);
+          location.hash = '';
+        },
+      },
+    };
+    if (redirecting) window.__SN_SCANNER_REDIRECTING__ = true;
+    return { location, replacements, window };
+  };
+
+  const canonical = createWindow();
+  runInNewContext(bootstrapScript, { window: canonical.window });
+  assert.equal(
+    canonical.window.__SN_SCANNER_BOOTSTRAP_HASH__,
+    '#vG0123456789ABCDEFGHIJ',
+  );
+  assert.equal(canonical.location.hash, '');
+  assert.deepEqual(canonical.replacements, ['/scan?source=qr']);
+
+  const legacy = createWindow({ redirecting: true });
+  runInNewContext(bootstrapScript, { window: legacy.window });
+  assert.equal(legacy.window.__SN_SCANNER_BOOTSTRAP_HASH__, undefined);
+  assert.equal(legacy.location.hash, '#vG0123456789ABCDEFGHIJ');
+  assert.deepEqual(legacy.replacements, []);
+});
+
 test('neutral Firebase hosting is isolated and old QR links retain their fragment', async () => {
   const [firebaseSource, projectSource, redirect] = await Promise.all([
     readFile(new URL('firebase.json', directory), 'utf8'),
@@ -747,7 +810,7 @@ export function disposeDocumentRecognizer() { return Promise.resolve(); }
   const source = await readFile(scannerUrl, 'utf8');
   const instrumentedSource = source
     .replace(
-      "from './scanner-core.js?v=20261015-compact-qr-v29';",
+      "from './scanner-core.js?v=20261015-live-gate-v32';",
       `from ${JSON.stringify(scannerCoreUrl)};`,
     )
     .replace(
@@ -1138,6 +1201,24 @@ export function torchLifecycleState() {
       3_150,
     );
     assert.deepEqual(missingDocument, {
+      valid: true,
+      ready: true,
+      green: true,
+      red: false,
+      countdown: '',
+      status: 'Aufnahme wird erstellt …',
+    });
+    const missingBeyondGrace = scanner.advanceLiveCaptureProgressTest(
+      {
+        positioned: false,
+        documentPresent: false,
+        reason:
+          'Kein Dokument erkannt. Bitte nur den Ausweis oder Pass in den Rahmen halten.',
+        box: null,
+      },
+      3_701,
+    );
+    assert.deepEqual(missingBeyondGrace, {
       valid: false,
       ready: false,
       green: false,

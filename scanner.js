@@ -21,7 +21,7 @@ import {
   portraitCaptureLayout,
   scannerDocumentsForVersion,
   updateHoldState,
-} from './scanner-core.js?v=20261015-compact-qr-v29';
+} from './scanner-core.js?v=20261015-live-gate-v32';
 import {
   cancelDocumentRecognition,
   disposeDocumentRecognizer,
@@ -913,27 +913,36 @@ function visibleFrame(canvas, source, sourceWidth, sourceHeight) {
 }
 
 function applyLiveObservation(observation, timestamp, frameSize) {
-  if (!observation.documentPresent) {
-    holdState = createHoldState();
-    lastPositionedBox = null;
-  } else {
-    holdState = updateHoldState(holdState, observation, timestamp, frameSize);
-    if (observation.positioned) lastPositionedBox = observation.box;
-    else if (!holdState.holding) lastPositionedBox = null;
-  }
-
-  const visuallyValid = Boolean(
-    observation.documentPresent &&
-    (observation.positioned || holdState.holding),
+  const stableObservation = observation.documentPresent
+    ? observation
+    : { ...observation, positioned: false };
+  holdState = updateHoldState(
+    holdState,
+    stableObservation,
+    timestamp,
+    frameSize,
   );
+  if (observation.documentPresent && observation.positioned)
+    lastPositionedBox = observation.box;
+  else if (!holdState.holding) lastPositionedBox = null;
+
+  // A single soft autofocus frame must not reset three seconds of otherwise
+  // stable positioning. updateHoldState owns the bounded grace period; after
+  // it expires both the green guide and the remembered crop are cleared.
+  const visuallyValid = Boolean(holdState.holding && lastPositionedBox);
   setGuide(visuallyValid);
   elements.sideLabel.textContent = sideTitle();
   if (visuallyValid) {
-    elements.cameraStatus.textContent = `Bitte stillhalten · Aufnahme in ${Math.max(
-      1,
-      holdState.countdown,
-    )} …`;
-    elements.countdown.textContent = holdState.countdown || '';
+    if (holdState.ready) {
+      elements.cameraStatus.textContent = 'Aufnahme wird erstellt …';
+      elements.countdown.textContent = '';
+    } else {
+      elements.cameraStatus.textContent = `Bitte stillhalten · Aufnahme in ${Math.max(
+        1,
+        holdState.countdown,
+      )} …`;
+      elements.countdown.textContent = holdState.countdown || '';
+    }
   } else {
     elements.cameraStatus.textContent = CAMERA_FRAME_INSTRUCTION;
     elements.countdown.textContent = '';
@@ -941,10 +950,8 @@ function applyLiveObservation(observation, timestamp, frameSize) {
   return visuallyValid;
 }
 
-function shouldCaptureAutomatically(observation) {
-  return Boolean(
-    holdState.ready && observation.documentPresent && lastPositionedBox,
-  );
+function shouldCaptureAutomatically() {
+  return Boolean(holdState.ready && lastPositionedBox);
 }
 
 function beginAnalysis() {
@@ -2282,14 +2289,29 @@ async function resolveScannerBootstrap(initialBootstrap) {
   }
 }
 
-async function start() {
+function takeScannerBootstrapHash() {
+  const bootstrapHash =
+    typeof window.__SN_SCANNER_BOOTSTRAP_HASH__ === 'string'
+      ? window.__SN_SCANNER_BOOTSTRAP_HASH__
+      : window.location.hash;
   try {
-    let bootstrapHash = window.location.hash;
+    delete window.__SN_SCANNER_BOOTSTRAP_HASH__;
+  } catch {
+    window.__SN_SCANNER_BOOTSTRAP_HASH__ = '';
+  }
+  if (window.location.hash) {
     window.history.replaceState(
       null,
       '',
       `${window.location.pathname}${window.location.search}`,
     );
+  }
+  return bootstrapHash;
+}
+
+async function start() {
+  try {
+    let bootstrapHash = takeScannerBootstrapHash();
     if (!window.isSecureContext || !window.crypto?.subtle) {
       bootstrapHash = '';
       throw new Error(

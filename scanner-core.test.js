@@ -990,6 +990,36 @@ test('strict live gate accepts a printed document surface and rejects keyboards'
   }
 });
 
+test('live guide accepts a softly focused smaller ID while final checks stay strict', () => {
+  const guide = { x: 35, y: 201, width: 410, height: 259 };
+  const card = { x: 76, y: 227, width: 328, height: 207 };
+  const softDocument = plausibleDocumentFixture({
+    card,
+    backgroundValue: 132,
+    cardValue: 170,
+    textValue: 160,
+  });
+  const live = analyzeFramePosition(softDocument, guide, null, {
+    requireDocumentPresence: true,
+    slot: 'id-front',
+  });
+  assert.equal(live.positioned, true, JSON.stringify(live));
+  assert.equal(live.documentPresent, true);
+  assert.equal(live.texture.liveAccepted, true);
+  assert.ok(live.texture.textComponents >= 3);
+  assert.equal(live.texture.strongKeyboardPattern, false);
+
+  const frozen = analyzeDocumentPresence(softDocument, {
+    regionRect: card,
+    slot: 'id-front',
+  });
+  assert.equal(
+    frozen.accepted,
+    false,
+    'the tolerant live guide must not weaken frozen-frame validation',
+  );
+});
+
 test('frozen-frame document gate rejects a keyboard before feedback or review', () => {
   const document = analyzeDocumentPresence(plausibleDocumentFixture(), {
     regionRect: { x: 35, y: 201, width: 410, height: 259 },
@@ -1064,6 +1094,21 @@ test('document presence rejects an empty card-shaped surface', () => {
   );
   assert.equal(empty.accepted, false);
   assert.equal(empty.metrics.textComponents, 0);
+
+  const guide = { x: 35, y: 201, width: 410, height: 259 };
+  const liveEmpty = analyzeFramePosition(
+    frameFixture({
+      card: guide,
+      backgroundValue: 35,
+      cardValue: 205,
+      textValue: 205,
+    }),
+    guide,
+    null,
+    { requireDocumentPresence: true, slot: 'id-front' },
+  );
+  assert.equal(liveEmpty.positioned, false);
+  assert.equal(liveEmpty.documentPresent, false);
 });
 
 test('requires three real seconds of stable positioning and tolerates brief jitter', () => {

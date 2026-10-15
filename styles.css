@@ -650,6 +650,10 @@ button {
 
 .id-guide.is-green {
   --guide-color: #24d28c;
+  border-color: #24d28c;
+  box-shadow:
+    0 0 0 1px rgba(0, 0, 0, 0.4),
+    0 0 24px rgba(36, 210, 140, 0.42);
 }
 
 .id-guide.is-passport {
