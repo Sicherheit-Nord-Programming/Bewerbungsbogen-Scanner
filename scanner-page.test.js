@@ -1176,6 +1176,13 @@ export function torchLifecycleState() {
     });
     return { promise, reject, resolve };
   };
+  const waitUntil = async (predicate, attempts = 100) => {
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+      if (predicate()) return true;
+      await new Promise((resolve) => setTimeout(resolve, 1));
+    }
+    return predicate();
+  };
   const createStream = () => {
     const track = {
       applyConstraints: async () => {},
@@ -1688,7 +1695,11 @@ export function torchLifecycleState() {
     const capturedStream = createStream();
     scanner.prepareAutomaticCaptureLifecycleTest(capturedStream);
     const acceptedCapturePromise = scanner.captureAutomatically();
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(
+      await waitUntil(() => captureProcessingCalls === 1),
+      true,
+      'capture processing must start before lifecycle assertions run',
+    );
     assert.equal(frozenFrameCalls, 1);
     assert.equal(captureProcessingCalls, 1);
     assert.deepEqual(vibrations, [[80, 40, 120]]);
