@@ -86,8 +86,8 @@ test('standalone page contains a live camera guide without external code', async
   assert.match(html, /id="rotate-phone"/);
   assert.match(html, /Handy waagerecht drehen/);
   assert.match(html, /bootstrap-hash\.js\?v=20261015-clean-url-v31/);
-  assert.match(html, /scanner\.js\?v=20261015-live-gate-v32/);
-  assert.match(html, /styles\.css\?v=20261015-live-gate-v32/);
+  assert.match(html, /scanner\.js\?v=20261016-capture-freeze-v33/);
+  assert.match(html, /styles\.css\?v=20261016-capture-freeze-v33/);
   assert.match(html, /<title>Sicherheit Nord<\/title>/);
   assert.match(html, /<meta property="og:title" content="Sicherheit Nord" \/>/);
   const legacyRedirectPosition = html.indexOf('legacy-redirect.js');
@@ -178,6 +178,10 @@ test('standalone page contains a live camera guide without external code', async
   assert.doesNotMatch(html, /document-icon/);
   assert.match(html, /id="torch-toggle"/);
   assert.match(html, /id="back-to-dashboard"/);
+  assert.match(html, /id="capture-processing"/);
+  assert.match(html, /id="capture-processing-image"/);
+  assert.match(html, /id="capture-processing-spinner"/);
+  assert.match(html, /id="capture-processing-retry"[\s\S]{0,180}Neu aufnehmen/);
   assert.doesNotMatch(
     html,
     /Vorderseite · 1 von 2|Pilotbetrieb|id="instruction"/,
@@ -211,7 +215,7 @@ test('standalone page contains a live camera guide without external code', async
   );
   assert.match(
     script,
-    /function stopCamera\(\)[\s\S]+?cancelAnimationFrame\(orientationResumeFrame\)/,
+    /function stopCamera\(\{ cancelRecognition = true \} = \{\}\)[\s\S]+?cancelAnimationFrame\(orientationResumeFrame\)/,
   );
   assert.match(script, /Handy waagerecht drehen\./);
   assert.match(
@@ -279,19 +283,70 @@ test('standalone page contains a live camera guide without external code', async
   const automaticCapture = script.indexOf(
     'async function captureAutomatically',
   );
+  const guidedFreeze = script.indexOf(
+    'frozenCapture = freezeGuidedVideoFrame();',
+    automaticCapture,
+  );
   const captureFeedback = script.indexOf(
     'triggerCaptureFeedback();',
     automaticCapture,
   );
-  const frozenCapture = script.indexOf(
-    'const result = await produceCapture();',
+  const cameraShutdown = script.indexOf(
+    'stopCamera({ cancelRecognition: false });',
+    automaticCapture,
+  );
+  const processingView = script.indexOf(
+    'showCaptureProcessing(frozenCapture);',
+    automaticCapture,
+  );
+  const frozenProcessing = script.indexOf(
+    'const result = await produceCapture(',
     automaticCapture,
   );
   assert.ok(
-    captureFeedback > automaticCapture && frozenCapture > captureFeedback,
-    'capture feedback must happen immediately at the 3-2-1 boundary before frozen-frame processing',
+    guidedFreeze > automaticCapture &&
+      captureFeedback > guidedFreeze &&
+      cameraShutdown > captureFeedback &&
+      processingView > cameraShutdown &&
+      frozenProcessing > processingView,
+    'the 3-2-1 boundary must freeze one frame, confirm it, close the live camera, and show processing before slower checks',
   );
-  assert.match(script, /const still = captureVideoFrame\(\)/);
+  assert.match(
+    script,
+    /async function produceCapture\(frozenCapture, capturedCameraGeneration\)/,
+  );
+  assert.match(
+    script,
+    /const result = await produceCapture\(\s*frozenCapture,\s*capturedCameraGeneration,?\s*\)/,
+  );
+  assert.match(
+    script,
+    /function showCaptureProcessing\(frozenCapture\)[\s\S]+?elements\.cameraStage\.hidden = true;[\s\S]+?elements\.captureProcessing\.hidden = false;/,
+  );
+  assert.match(
+    script,
+    /function showCaptureReview\(result, consentCopy\)[\s\S]+?elements\.cameraStage\.hidden = true;[\s\S]+?clearCaptureProcessing\(\)[\s\S]+?elements\.review\.hidden = false;/,
+  );
+  assert.match(
+    script,
+    /if \(!result\.quality\.accepted\) \{[\s\S]+?showCaptureFailure\([\s\S]+?return;[\s\S]+?\}\s*showCaptureReview/,
+  );
+  assert.match(
+    script,
+    /function showCaptureFailure\(message\)[\s\S]+?state = 'capture-rejected';[\s\S]+?captureProcessingRetry\.hidden = false;[\s\S]+?cameraStage\.hidden = true;/,
+  );
+  assert.match(
+    script,
+    /function retryRejectedCapture\(\)[\s\S]+?state !== 'capture-rejected'[\s\S]+?cameraStage\.hidden = false;[\s\S]+?resumeOrRequestCamera\(\)/,
+  );
+  assert.match(
+    script,
+    /elements\.captureProcessingRetry\.addEventListener\('click', retryRejectedCapture\)/,
+  );
+  assert.match(
+    script,
+    /function freezeGuidedVideoFrame\(\)[\s\S]+?captureVideoFrame\(\)/,
+  );
   assert.match(script, /guideCropInSource\(/);
   assert.equal(
     (script.match(/captureOrientation: 'portrait'/g) ?? []).length,
@@ -316,7 +371,7 @@ test('standalone page contains a live camera guide without external code', async
   );
   assert.match(
     script,
-    /const portraitGuide = activeProfile\(\)\.captureOrientation === 'portrait'/,
+    /const portraitGuide = frozenCapture\.profile\.captureOrientation === 'portrait'/,
   );
   assert.match(script, /portraitGuide \? 'portrait' : 'landscape'/);
   assert.doesNotMatch(script, /mapBoxToSource/);
@@ -351,7 +406,10 @@ test('standalone page contains a live camera guide without external code', async
   assert.match(script, /recognizeDocumentCanvas\(canvas, 'tax-id'\)/);
   assert.match(script, /cancelDocumentRecognition/);
   assert.doesNotMatch(script, /resetLiveDocumentRecognition/);
-  assert.match(script, /function stopCamera\(\) \{[\s\S]+?stopAnalysis\(\);/);
+  assert.match(
+    script,
+    /function stopCamera\(\{ cancelRecognition = true \} = \{\}\) \{[\s\S]+?stopAnalysis\(\{ cancelRecognition \}\);/,
+  );
   assert.match(
     script,
     /function updatePhoneOrientation\(\)[\s\S]+?stopAnalysis\(\{ cancelRecognition: false \}\)/,
@@ -542,7 +600,10 @@ test('standalone page contains a live camera guide without external code', async
     script,
     /elements\.documentPreview\.inert = false;[\s\S]+?removeAttribute\('aria-hidden'\)/,
   );
-  assert.match(script, /acceptedCapture = result;[\s\S]{0,250}stopCamera\(\)/);
+  assert.match(
+    script,
+    /function showCaptureReview\(result, consentCopy\)[\s\S]+?acceptedCapture = result;[\s\S]+?cameraStage\.hidden = true;[\s\S]+?clearCaptureProcessing\(\)/,
+  );
   assert.match(script, /visibilitychange/);
   assert.match(script, /function animateViewIn\(/);
   assert.match(script, /prefersReducedMotion\(\)/);
@@ -826,14 +887,30 @@ export function disposeDocumentRecognizer() { return Promise.resolve(); }
       `from ${JSON.stringify(relayClientUrl)};`,
     )
     .replace(
+      '    frozenCapture = freezeGuidedVideoFrame();',
+      '    frozenCapture = globalThis.__scannerTestFreezeCapture();',
+    )
+    .replace(
+      `    const result = await produceCapture(
+      frozenCapture,
+      capturedCameraGeneration,
+    );`,
+      `    const result = await globalThis.__scannerTestProduceCapture(
+      frozenCapture,
+      capturedCameraGeneration,
+    );`,
+    )
+    .replace(
       /\n(?:if \(!window\.__SN_SCANNER_REDIRECTING__\) )?void start\(\);\s*$/,
       `
 export {
   advanceAfterFinalizedDocumentSlot,
   backToDashboard,
+  captureAutomatically,
   phoneViewportIsLandscape,
   requestCamera,
   resetTorchState,
+  retryRejectedCapture,
   setTorch,
   startDocument,
   stopCamera,
@@ -932,6 +1009,33 @@ export function cameraLifecycleState() {
     hasCameraRequest: Boolean(cameraRequest),
   };
 }
+export function prepareAutomaticCaptureLifecycleTest(stream) {
+  clearAcceptedCapture();
+  clearCaptureProcessing();
+  sessionClaimed = true;
+  sessionClosed = false;
+  busy = false;
+  state = 'scanning';
+  side = 'front';
+  mediaStream = stream;
+  mediaStreamRequest = null;
+  activeVideoTrack = stream.getVideoTracks()[0] ?? null;
+  elements.camera.srcObject = stream;
+  elements.cameraStage.hidden = false;
+  elements.captureProcessing.hidden = true;
+  elements.review.hidden = true;
+}
+export function automaticCaptureLifecycleState() {
+  return {
+    state,
+    cameraHidden: elements.cameraStage.hidden,
+    processingHidden: elements.captureProcessing.hidden,
+    processingRetryHidden: elements.captureProcessingRetry.hidden,
+    processingTitle: elements.captureProcessingTitle.textContent,
+    reviewHidden: elements.review.hidden,
+    cameraSource: elements.camera.srcObject,
+  };
+}
 export function prepareLiveCaptureProgressTest() {
   state = 'scanning';
   sessionClosed = false;
@@ -994,6 +1098,8 @@ export function torchLifecycleState() {
       'requestAnimationFrame',
       'screen',
       'window',
+      '__scannerTestFreezeCapture',
+      '__scannerTestProduceCapture',
     ].map((name) => [name, Object.getOwnPropertyDescriptor(globalThis, name)]),
   );
   const defineGlobal = (name, value) =>
@@ -1091,12 +1197,14 @@ export function torchLifecycleState() {
   const thirdCamera = deferred();
   const hiddenCamera = deferred();
   const resumedCamera = deferred();
+  const retryCamera = deferred();
   const pendingCameras = [
     firstCamera,
     secondCamera,
     thirdCamera,
     hiddenCamera,
     resumedCamera,
+    retryCamera,
   ];
   let getUserMediaCalls = 0;
   let animationFrameCalls = 0;
@@ -1109,10 +1217,46 @@ export function torchLifecycleState() {
       documentListeners.set(type, listener);
     },
     getElementById: element,
+    createElement(tagName) {
+      assert.equal(tagName, 'canvas');
+      return {
+        height: 0,
+        width: 0,
+        getContext: () => ({ drawImage() {} }),
+        toDataURL: () => 'data:image/jpeg;base64,ZmFrZQ==',
+      };
+    },
     visibilityState: 'visible',
   };
 
   try {
+    let frozenFrameCalls = 0;
+    let captureProcessingCalls = 0;
+    let captureProcessor = deferred();
+    const frozenCapture = {
+      still: {
+        source: {},
+        width: 1_920,
+        height: 1_080,
+        kind: 'video',
+        close() {},
+      },
+      slot: 'front',
+      profile: {
+        aspectRatio: 85.6 / 53.98,
+        captureOrientation: 'landscape',
+      },
+      stageSize: { width: 844, height: 390 },
+      guideRect: { x: 102, y: 48, width: 640, height: 294 },
+    };
+    defineGlobal('__scannerTestFreezeCapture', () => {
+      frozenFrameCalls += 1;
+      return frozenCapture;
+    });
+    defineGlobal('__scannerTestProduceCapture', () => {
+      captureProcessingCalls += 1;
+      return captureProcessor.promise;
+    });
     defineGlobal('cancelAnimationFrame', () => {});
     defineGlobal('requestAnimationFrame', () => {
       animationFrameCalls += 1;
@@ -1127,7 +1271,12 @@ export function torchLifecycleState() {
       clearTimeout,
       setTimeout,
     });
+    const vibrations = [];
     defineGlobal('navigator', {
+      vibrate(pattern) {
+        vibrations.push([...pattern]);
+        return true;
+      },
       mediaDevices: {
         getSupportedConstraints: () => ({}),
         getUserMedia: () => {
@@ -1535,6 +1684,94 @@ export function torchLifecycleState() {
       ariaPressed: 'false',
       ariaBusy: undefined,
     });
+
+    const capturedStream = createStream();
+    scanner.prepareAutomaticCaptureLifecycleTest(capturedStream);
+    const acceptedCapturePromise = scanner.captureAutomatically();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(frozenFrameCalls, 1);
+    assert.equal(captureProcessingCalls, 1);
+    assert.deepEqual(vibrations, [[80, 40, 120]]);
+    assert.equal(capturedStream.track.stopCalls, 1);
+    assert.deepEqual(scanner.automaticCaptureLifecycleState(), {
+      state: 'capturing',
+      cameraHidden: true,
+      processingHidden: false,
+      processingRetryHidden: true,
+      processingTitle: 'Scan wird geprüft',
+      reviewHidden: true,
+      cameraSource: null,
+    });
+    await scanner.captureAutomatically();
+    assert.equal(
+      frozenFrameCalls,
+      1,
+      'a pending capture must not freeze twice',
+    );
+    assert.equal(captureProcessingCalls, 1);
+    assert.equal(vibrations.length, 1);
+    captureProcessor.resolve({
+      quality: { accepted: true, status: 'accepted' },
+      blob: new Blob(['accepted'], { type: 'image/jpeg' }),
+      bytes: new Uint8Array([1, 2, 3]),
+      width: 1_600,
+      height: 1_008,
+    });
+    await acceptedCapturePromise;
+    assert.deepEqual(scanner.automaticCaptureLifecycleState(), {
+      state: 'review',
+      cameraHidden: true,
+      processingHidden: true,
+      processingRetryHidden: true,
+      processingTitle: 'Scan wird geprüft',
+      reviewHidden: false,
+      cameraSource: null,
+    });
+    assert.equal(capturedStream.track.stopCalls, 1);
+
+    const rejectedStream = createStream();
+    captureProcessor = deferred();
+    scanner.prepareAutomaticCaptureLifecycleTest(rejectedStream);
+    const rejectedCapturePromise = scanner.captureAutomatically();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    captureProcessor.resolve({
+      quality: {
+        accepted: false,
+        status: 'blurred',
+        message: 'Das Dokument ist unscharf.',
+      },
+    });
+    await rejectedCapturePromise;
+    assert.equal(rejectedStream.track.stopCalls, 1);
+    assert.equal(
+      getUserMediaCalls,
+      5,
+      'a rejected scan must wait for an explicit retry',
+    );
+    assert.deepEqual(scanner.automaticCaptureLifecycleState(), {
+      state: 'capture-rejected',
+      cameraHidden: true,
+      processingHidden: false,
+      processingRetryHidden: false,
+      processingTitle: 'Scan nicht übernommen',
+      reviewHidden: true,
+      cameraSource: null,
+    });
+
+    scanner.retryRejectedCapture();
+    assert.equal(getUserMediaCalls, 6);
+    const retryResult = scanner.cameraLifecycleState().cameraPromise;
+    const retryStream = createStream();
+    retryCamera.resolve(retryStream);
+    assert.equal(await retryResult, true);
+    assert.equal(scanner.automaticCaptureLifecycleState().state, 'scanning');
+    assert.equal(scanner.automaticCaptureLifecycleState().cameraHidden, false);
+    assert.equal(
+      scanner.automaticCaptureLifecycleState().processingHidden,
+      true,
+    );
+    scanner.stopCamera();
+    assert.equal(retryStream.track.stopCalls, 1);
   } finally {
     for (const [name, descriptor] of originalGlobals) {
       if (descriptor) Object.defineProperty(globalThis, name, descriptor);

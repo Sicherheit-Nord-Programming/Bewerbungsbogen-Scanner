@@ -26,8 +26,11 @@
     <title>Sicherheit Nord</title>
     <script src="./legacy-redirect.js?v=20261010-tax-id-start-v16"></script>
     <script src="./bootstrap-hash.js?v=20261015-clean-url-v31"></script>
-    <link rel="stylesheet" href="./styles.css?v=20261015-live-gate-v32" />
-    <script type="module" src="./scanner.js?v=20261015-live-gate-v32"></script>
+    <link rel="stylesheet" href="./styles.css?v=20261016-capture-freeze-v33" />
+    <script
+      type="module"
+      src="./scanner.js?v=20261016-capture-freeze-v33"
+    ></script>
   </head>
   <body>
     <main id="app" class="app" aria-busy="true">
@@ -276,6 +279,43 @@
         >
           Kamera erlauben
         </button>
+      </section>
+
+      <section
+        id="capture-processing"
+        class="capture-processing"
+        hidden
+        tabindex="-1"
+        aria-labelledby="capture-processing-title"
+        aria-describedby="capture-processing-status"
+      >
+        <div class="capture-processing-card">
+          <div class="capture-processing-preview" aria-hidden="true">
+            <img id="capture-processing-image" alt="" />
+            <span
+              id="capture-processing-spinner"
+              class="capture-processing-spinner"
+            ></span>
+          </div>
+          <h1 id="capture-processing-title">Scan wird geprüft</h1>
+          <p
+            id="capture-processing-status"
+            class="capture-processing-status"
+            role="status"
+            aria-live="polite"
+          >
+            Das Dokument wird verarbeitet …
+          </p>
+          <button
+            id="capture-processing-retry"
+            class="secondary"
+            type="button"
+            aria-describedby="capture-processing-status"
+            hidden
+          >
+            Neu aufnehmen
+          </button>
+        </div>
       </section>
 
       <section id="review" class="review" hidden aria-labelledby="review-title">

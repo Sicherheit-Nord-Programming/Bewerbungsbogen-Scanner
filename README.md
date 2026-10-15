@@ -107,21 +107,23 @@ entsprechen dem verschlüsselten Apps-Script-Relay-Protokoll.
    der Rahmen ohne wartende OCR grün und der Countdown beginnt.
 4. Nach drei echten Sekunden stabiler Lage wird der aktuelle Videoframe
    unmittelbar eingefroren und das Handy vibriert, sofern der Browser dies
-   erlaubt. Erst auf diesem einen ruhigen Bild laufen anschließend die
-   Qualitäts- und lokale Dokumenttypprüfung. Nicht eindeutig als der gewählte
-   Dokumenttyp erkannte Bilder werden abgelehnt. Die OCR hält den grünen Rahmen
-   und den Aufnahmezeitpunkt nicht mehr auf, weil sie erst auf dem bereits
-   eingefrorenen Foto läuft.
+   erlaubt. Die Live-Kamera wird in diesem Moment vollständig beendet und der
+   eingefrorene Scan bleibt während der anschließenden Qualitäts- und lokalen
+   Dokumenttypprüfung sichtbar. Nicht eindeutig als der gewählte Dokumenttyp
+   erkannte Bilder werden abgelehnt. Die OCR hält den grünen Rahmen und den
+   Aufnahmezeitpunkt nicht mehr auf, weil sie erst auf dem bereits eingefrorenen
+   Foto läuft.
 5. Die technische Prüfung entspricht den Desktop-Grenzwerten für Auflösung,
    Helligkeit, Kontrast, Laplace-Schärfe, Clipping und lokale Spiegelung. Die
    Dokumenttypprüfung läuft mit selbst gehostetem Tesseract.js ohne zusätzlichen
    OCR-Cloud-Dienst. Die Prüfung ist keine Echtheits-, Gültigkeits- oder
    Lebenderkennung.
-6. Abgelehnte Aufnahmen starten automatisch neu. Angenommene Aufnahmen werden
-   konservativ zugeschnitten und farblich optimiert. OCR-Texte werden nur im
-   Arbeitsspeicher klassifiziert, weder protokolliert noch an den Relay-Dienst
-   übertragen und anschließend verworfen. Unlesbare Schrift wird nicht
-   generativ rekonstruiert.
+6. Abgelehnte Aufnahmen bleiben mit einer verständlichen Meldung und
+   **Neu aufnehmen** stehen; erst diese bewusste Auswahl öffnet die Kamera
+   erneut. Angenommene Aufnahmen werden konservativ zugeschnitten und farblich
+   optimiert. OCR-Texte werden nur im Arbeitsspeicher klassifiziert, weder
+   protokolliert noch an den Relay-Dienst übertragen und anschließend verworfen.
+   Unlesbare Schrift wird nicht generativ rekonstruiert.
 7. Vor der verschlüsselten Übertragung bestätigt der Nutzer die sichtbare
    Vorschau. Bei zweiseitigen Dokumenten folgt automatisch die Rückseite. Sind
    weitere Dokumente ausgewählt, führt der Abschluss eines Dokuments zurück

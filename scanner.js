@@ -97,6 +97,12 @@ const elements = Object.fromEntries(
     'start-camera',
     'back-to-dashboard',
     'torch-toggle',
+    'capture-processing',
+    'capture-processing-image',
+    'capture-processing-spinner',
+    'capture-processing-title',
+    'capture-processing-status',
+    'capture-processing-retry',
     'review',
     'review-title',
     'preview',
@@ -408,6 +414,7 @@ function animateViewIn(container, direction = 'forward', targetSelf = false) {
 
   const isCamera = container === elements.cameraStage;
   const isOverlay =
+    container === elements.captureProcessing ||
     container === elements.review ||
     container === elements.complete ||
     container === elements.fatal;
@@ -569,8 +576,8 @@ function releaseCameraStream(stream, request) {
   stopStreamTracks(stream);
 }
 
-function stopCamera() {
-  stopAnalysis();
+function stopCamera({ cancelRecognition = true } = {}) {
+  stopAnalysis({ cancelRecognition });
   cameraPresentationGeneration += 1;
   cancelAnimationFrame(orientationRefreshFrame);
   orientationRefreshFrame = 0;
@@ -592,6 +599,14 @@ function clearPreview() {
   if (previewUrl) URL.revokeObjectURL(previewUrl);
   previewUrl = '';
   elements.preview.removeAttribute('src');
+}
+
+function clearCaptureProcessing() {
+  elements.captureProcessingImage.removeAttribute('src');
+  elements.captureProcessing.classList.remove('is-error');
+  elements.captureProcessingSpinner.hidden = false;
+  elements.captureProcessingRetry.hidden = true;
+  elements.captureProcessing.hidden = true;
 }
 
 function clearAcceptedCapture() {
@@ -653,6 +668,7 @@ function disposeSensitiveState() {
   expiryTimer = 0;
   stopCamera();
   clearAcceptedCapture();
+  clearCaptureProcessing();
   clearRetryPayload();
   clearCompletedCapturePreviews();
   encryptionKey = null;
@@ -677,6 +693,7 @@ function fail(message) {
   elements.loading.hidden = true;
   elements.dashboard.hidden = true;
   elements.cameraStage.hidden = true;
+  elements.captureProcessing.hidden = true;
   elements.review.hidden = true;
   elements.taxIdStage.hidden = true;
   elements.documentPreview.hidden = true;
@@ -1049,6 +1066,166 @@ function captureVideoFrame() {
   };
 }
 
+function freezeGuidedVideoFrame() {
+  const still = captureVideoFrame();
+  if (!still) return null;
+  const stageRect = elements.cameraStage.getBoundingClientRect();
+  const guideClient = elements.idGuide.getBoundingClientRect();
+  if (
+    !stageRect.width ||
+    !stageRect.height ||
+    !guideClient.width ||
+    !guideClient.height
+  ) {
+    still.close();
+    return null;
+  }
+  const profile = activeProfile();
+  return {
+    still,
+    slot: side,
+    profile: {
+      aspectRatio: profile.aspectRatio,
+      captureOrientation: profile.captureOrientation,
+    },
+    stageSize: {
+      width: stageRect.width,
+      height: stageRect.height,
+    },
+    guideRect: {
+      x: guideClient.left - stageRect.left,
+      y: guideClient.top - stageRect.top,
+      width: guideClient.width,
+      height: guideClient.height,
+    },
+  };
+}
+
+function frozenCaptureCrop(frozenCapture) {
+  const sourceBox = guideCropInSource(
+    frozenCapture.guideRect,
+    frozenCapture.still.width,
+    frozenCapture.still.height,
+    frozenCapture.stageSize.width,
+    frozenCapture.stageSize.height,
+  );
+  const portraitGuide = frozenCapture.profile.captureOrientation === 'portrait';
+  return {
+    crop: normalizedIdCrop(
+      sourceBox,
+      frozenCapture.still.width,
+      frozenCapture.still.height,
+      0,
+      portraitGuide ? 'portrait' : 'landscape',
+      frozenCapture.profile.aspectRatio,
+    ),
+    portraitGuide,
+  };
+}
+
+function frozenCapturePreview(frozenCapture) {
+  const previewCanvas = document.createElement('canvas');
+  try {
+    const { crop, portraitGuide } = frozenCaptureCrop(frozenCapture);
+    const layout = portraitGuide
+      ? portraitCaptureLayout(crop, 900, frozenCapture.profile.aspectRatio)
+      : {
+          width: Math.max(1, Math.floor(Math.min(900, crop.width))),
+          height: 0,
+        };
+    previewCanvas.width = layout.width;
+    previewCanvas.height = portraitGuide
+      ? layout.height
+      : Math.max(
+          1,
+          Math.floor(layout.width / frozenCapture.profile.aspectRatio),
+        );
+    const context = previewCanvas.getContext('2d', { alpha: false });
+    if (!context) return '';
+    if (portraitGuide) {
+      drawPortraitCropAsLandscape(
+        context,
+        frozenCapture.still.source,
+        crop,
+        previewCanvas.width,
+        previewCanvas.height,
+      );
+    } else {
+      context.drawImage(
+        frozenCapture.still.source,
+        crop.x,
+        crop.y,
+        crop.width,
+        crop.height,
+        0,
+        0,
+        previewCanvas.width,
+        previewCanvas.height,
+      );
+    }
+    return previewCanvas.toDataURL('image/jpeg', 0.86);
+  } catch {
+    return '';
+  } finally {
+    previewCanvas.width = 0;
+    previewCanvas.height = 0;
+  }
+}
+
+function showCaptureProcessing(frozenCapture) {
+  elements.captureProcessingImage.removeAttribute('src');
+  elements.captureProcessingImage.parentElement.classList.toggle(
+    'is-passport',
+    frozenCapture.profile.aspectRatio === PASSPORT_ASPECT_RATIO,
+  );
+  elements.captureProcessing.classList.remove('is-error');
+  elements.captureProcessingTitle.textContent = 'Scan wird geprüft';
+  elements.captureProcessingStatus.textContent =
+    'Das Dokument wird verarbeitet …';
+  elements.captureProcessingSpinner.hidden = false;
+  elements.captureProcessingRetry.hidden = true;
+  elements.cameraStage.hidden = true;
+  elements.review.hidden = true;
+  elements.captureProcessing.hidden = false;
+  elements.app.setAttribute('aria-busy', 'true');
+  animateViewIn(elements.captureProcessing, 'forward');
+  elements.captureProcessing.focus({ preventScroll: true });
+}
+
+function setCaptureProcessingPreview(frozenCapture) {
+  const preview = frozenCapturePreview(frozenCapture);
+  if (preview) elements.captureProcessingImage.src = preview;
+}
+
+function showCaptureFailure(message) {
+  state = 'capture-rejected';
+  elements.captureProcessing.classList.add('is-error');
+  elements.captureProcessingTitle.textContent = 'Scan nicht übernommen';
+  elements.captureProcessingStatus.textContent = message;
+  elements.captureProcessingSpinner.hidden = true;
+  elements.captureProcessingRetry.hidden = false;
+  elements.cameraStage.hidden = true;
+  elements.captureProcessing.hidden = false;
+  elements.app.setAttribute('aria-busy', 'false');
+  elements.captureProcessingRetry.focus({ preventScroll: true });
+}
+
+function retryRejectedCapture() {
+  if (busy || sessionClosed || state !== 'capture-rejected') return;
+  clearCaptureProcessing();
+  elements.cameraStage.hidden = false;
+  state = 'scanning';
+  setGuide(false);
+  setCameraMessage(
+    'Kamera wird geöffnet …',
+    'Bitte das Dokument bereithalten.',
+  );
+  elements.app.setAttribute('aria-busy', 'false');
+  animateViewIn(elements.cameraStage, 'backward');
+  elements.cameraStage.focus({ preventScroll: true });
+  resumeOrRequestCamera();
+}
+
 async function canvasToJpeg(canvas) {
   const blob = await new Promise((resolve) =>
     canvas.toBlob(resolve, 'image/jpeg', 0.94),
@@ -1067,6 +1244,8 @@ function clearTaxIdEntry() {
 function showCaptureReview(result, consentCopy) {
   acceptedCapture = result;
   stopCamera();
+  elements.cameraStage.hidden = true;
+  clearCaptureProcessing();
   previewUrl = URL.createObjectURL(result.blob);
   elements.preview.src = previewUrl;
   elements.reviewTitle.textContent = sideTitle();
@@ -1223,46 +1402,25 @@ async function normalizeTaxIdPhoto(file) {
   }
 }
 
-async function produceCapture() {
-  // Freeze the exact live frame at the 3–2–1 boundary. Using that same camera
-  // geometry keeps the review crop identical to the guide the applicant saw.
-  const still = captureVideoFrame();
+async function produceCapture(frozenCapture, capturedCameraGeneration) {
+  // The frame and guide geometry were frozen synchronously at the 3–2–1
+  // boundary, before the live stream was closed. All slower checks below use
+  // that exact immutable capture.
+  const still = frozenCapture?.still;
   if (!still) throw new Error('Das Kamerabild ist noch nicht bereit.');
   const canvas = elements.captureCanvas;
-  const capturedSlot = side;
-  const capturedCameraGeneration = cameraGeneration;
+  const capturedSlot = frozenCapture.slot;
+  const capturedProfile = frozenCapture.profile;
+  const captureKind = still.kind;
   let image = null;
   let temporaryCanvas = null;
   try {
-    const stageRect = elements.cameraStage.getBoundingClientRect();
-    const guideClient = elements.idGuide.getBoundingClientRect();
-    const stageGuideRect = {
-      x: guideClient.left - stageRect.left,
-      y: guideClient.top - stageRect.top,
-      width: guideClient.width,
-      height: guideClient.height,
-    };
-    const sourceBox = guideCropInSource(
-      stageGuideRect,
-      still.width,
-      still.height,
-      stageRect.width,
-      stageRect.height,
-    );
-    const portraitGuide = activeProfile().captureOrientation === 'portrait';
-    const crop = normalizedIdCrop(
-      sourceBox,
-      still.width,
-      still.height,
-      0,
-      portraitGuide ? 'portrait' : 'landscape',
-      activeProfile().aspectRatio,
-    );
+    const { crop, portraitGuide } = frozenCaptureCrop(frozenCapture);
     const nativeLayout = portraitGuide
       ? portraitCaptureLayout(
           crop,
           MAX_CAPTURE_LONG_EDGE,
-          activeProfile().aspectRatio,
+          capturedProfile.aspectRatio,
         )
       : {
           width: Math.max(
@@ -1273,7 +1431,7 @@ async function produceCapture() {
     const nativeWidth = nativeLayout.width;
     const nativeHeight = portraitGuide
       ? nativeLayout.height
-      : Math.max(1, Math.floor(nativeWidth / activeProfile().aspectRatio));
+      : Math.max(1, Math.floor(nativeWidth / capturedProfile.aspectRatio));
     canvas.width = nativeWidth;
     canvas.height = nativeHeight;
     let context = canvas.getContext('2d', {
@@ -1301,10 +1459,13 @@ async function produceCapture() {
         nativeHeight,
       );
     }
+    // The exact guide crop now lives on captureCanvas. Release the full camera
+    // frame before OCR so a 4K source does not stay resident during recognition.
+    still.close();
     image = context.getImageData(0, 0, nativeWidth, nativeHeight);
     const nativeQuality = analyzeCaptureQuality(
       image,
-      still.kind === 'video'
+      captureKind === 'video'
         ? {
             minimumLongEdge: VIDEO_FALLBACK_MIN_LONG_EDGE,
             minimumShortEdge: VIDEO_FALLBACK_MIN_SHORT_EDGE,
@@ -1350,12 +1511,12 @@ async function produceCapture() {
       };
     }
     const outputWidth =
-      still.kind === 'video' && nativeWidth < VIDEO_FALLBACK_OUTPUT_LONG_EDGE
+      captureKind === 'video' && nativeWidth < VIDEO_FALLBACK_OUTPUT_LONG_EDGE
         ? VIDEO_FALLBACK_OUTPUT_LONG_EDGE
         : nativeWidth;
     const outputHeight = Math.max(
       1,
-      Math.floor(outputWidth / activeProfile().aspectRatio),
+      Math.floor(outputWidth / capturedProfile.aspectRatio),
     );
     if (outputWidth !== nativeWidth) {
       temporaryCanvas = document.createElement('canvas');
@@ -1394,6 +1555,21 @@ async function produceCapture() {
     finalImage.data.fill(0);
     if (!quality.accepted) return { quality };
     const encoded = await canvasToJpeg(canvas);
+    if (
+      sessionClosed ||
+      state !== 'capturing' ||
+      side !== capturedSlot ||
+      cameraGeneration !== capturedCameraGeneration
+    ) {
+      encoded.bytes.fill(0);
+      return {
+        quality: {
+          accepted: false,
+          status: 'interrupted',
+          message: 'Die Aufnahme wurde unterbrochen. Bitte erneut versuchen.',
+        },
+      };
+    }
     return {
       quality,
       blob: encoded.blob,
@@ -1558,6 +1734,7 @@ function renderDashboard() {
 
 function showDashboard(direction = 'forward') {
   stopCamera();
+  clearCaptureProcessing();
   unlockScreenOrientation();
   clearTaxIdEntry();
   elements.loading.hidden = true;
@@ -1578,6 +1755,7 @@ function showDashboard(direction = 'forward') {
 
 function showTaxIdStage(direction = 'forward') {
   stopCamera();
+  clearCaptureProcessing();
   clearTaxIdEntry();
   elements.dashboard.hidden = true;
   elements.cameraStage.hidden = true;
@@ -1701,6 +1879,7 @@ function openDocument(documentId) {
   side = nextSlot;
   applyProfileVisuals();
   elements.dashboard.hidden = true;
+  clearCaptureProcessing();
   elements.review.hidden = true;
   elements.cameraStage.hidden = false;
   elements.backToDashboard.hidden = false;
@@ -1831,32 +2010,68 @@ async function captureAutomatically() {
     activeProfile().instruction,
     'Bitte stillhalten. Dokument wird geprüft …',
   );
-  triggerCaptureFeedback();
+  let frozenCapture = null;
+  let captureHandedOff = false;
+  let captureConfirmed = false;
   try {
-    const result = await produceCapture();
-    if (sessionClosed) return;
-    if (!result.quality.accepted) {
+    frozenCapture = freezeGuidedVideoFrame();
+    if (!frozenCapture) {
+      state = 'scanning';
       setGuide(false);
       setCameraMessage(
-        'Aufnahme nicht angenommen.',
-        `${result.quality.message} Neuer Versuch …`,
+        'Kamerabild noch nicht bereit.',
+        'Bitte das Dokument weiter im Rahmen halten.',
       );
-      await wait(1_150);
       resumeOrRequestCamera();
       return;
     }
-    // The accepted preview is a still image. Never leave the camera active
-    // invisibly behind the review or upload screen.
+
+    // From this exact boundary onward the vibration means that real pixels
+    // have been frozen. Close the live camera immediately; OCR may continue
+    // for a while, but the applicant must never see a live feed afterward.
+    triggerCaptureFeedback();
+    captureConfirmed = true;
+    stopCamera({ cancelRecognition: false });
+    const capturedCameraGeneration = cameraGeneration;
+    showCaptureProcessing(frozenCapture);
+
+    // Give the browser one rendering opportunity to replace the live camera
+    // before generating the preview and starting CPU-heavy image checks.
+    await wait(0);
+    if (sessionClosed || state !== 'capturing') return;
+    setCaptureProcessingPreview(frozenCapture);
+    captureHandedOff = true;
+    const result = await produceCapture(
+      frozenCapture,
+      capturedCameraGeneration,
+    );
+    if (sessionClosed || state !== 'capturing') return;
+    if (!result.quality.accepted) {
+      showCaptureFailure(
+        `${result.quality.message || 'Die Aufnahme ist nicht eindeutig lesbar.'} Bitte neu aufnehmen.`,
+      );
+      return;
+    }
     showCaptureReview(result, 'Angaben lesbar – Dokumentenkopie bestätigen.');
   } catch (error) {
-    if (sessionClosed) return;
-    setGuide(false);
-    setCameraMessage(
-      'Aufnahme konnte nicht geprüft werden.',
-      error instanceof Error ? error.message : 'Bitte erneut versuchen.',
+    if (sessionClosed || state !== 'capturing') return;
+    if (!captureConfirmed) {
+      state = 'scanning';
+      setGuide(false);
+      setCameraMessage(
+        'Kamerabild noch nicht bereit.',
+        'Bitte das Dokument weiter im Rahmen halten.',
+      );
+      resumeOrRequestCamera();
+      return;
+    }
+    showCaptureFailure(
+      error instanceof Error
+        ? `${error.message} Bitte neu aufnehmen.`
+        : 'Die Aufnahme konnte nicht geprüft werden. Bitte neu aufnehmen.',
     );
-    await wait(1_150);
-    resumeOrRequestCamera();
+  } finally {
+    if (frozenCapture && !captureHandedOff) frozenCapture.still.close();
   }
 }
 
@@ -2019,6 +2234,7 @@ function advanceAfterFinalizedDocumentSlot(finalizedSide) {
   );
   if (planStep.kind === 'capture') {
     clearAcceptedCapture();
+    clearCaptureProcessing();
     side = planStep.slot;
     applyProfileVisuals();
     elements.review.hidden = true;
@@ -2191,6 +2407,7 @@ async function finishDocumentSession() {
 function repeatCapture() {
   if (busy || retryPayload || pendingConfirm || sessionClosed) return;
   clearAcceptedCapture();
+  clearCaptureProcessing();
   elements.review.hidden = true;
   if (side === 'tax-id') {
     showTaxIdStage('backward');
@@ -2205,6 +2422,7 @@ function repeatCapture() {
 
 function completeSession(returnToDashboard = false) {
   stopCamera();
+  clearCaptureProcessing();
   void disposeDocumentRecognizer();
   clearTimeout(expiryTimer);
   expiryTimer = 0;
@@ -2217,6 +2435,7 @@ function completeSession(returnToDashboard = false) {
   sessionClosed = true;
   elements.loading.hidden = true;
   elements.cameraStage.hidden = true;
+  elements.captureProcessing.hidden = true;
   elements.review.hidden = true;
   elements.taxIdStage.hidden = true;
   elements.documentPreview.hidden = true;
@@ -2513,6 +2732,7 @@ elements.finishSession.addEventListener(
 elements.torchToggle.addEventListener('click', () => {
   if (!torchPending) void setTorch(!torchEnabled);
 });
+elements.captureProcessingRetry.addEventListener('click', retryRejectedCapture);
 elements.consent.addEventListener('change', updateReviewControls);
 elements.useCapture.addEventListener('click', () => void useCapture());
 elements.repeatCapture.addEventListener('click', repeatCapture);

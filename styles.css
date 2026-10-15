@@ -118,6 +118,7 @@ button {
 #document-preview-title:focus,
 #review-title:focus,
 #camera-stage:focus,
+#capture-processing:focus,
 #fatal:focus,
 #complete:focus {
   outline: none;
@@ -859,6 +860,7 @@ button {
   width: min(86vw, 360px);
 }
 
+.capture-processing,
 .review,
 .fatal,
 .complete {
@@ -874,12 +876,14 @@ button {
   color: #12223d;
 }
 
+.capture-processing[hidden],
 .review[hidden],
 .fatal[hidden],
 .complete[hidden] {
   display: none;
 }
 
+.capture-processing-card,
 .review-card,
 .fatal-card,
 .complete-card {
@@ -890,10 +894,79 @@ button {
   box-shadow: 0 15px 46px rgba(18, 34, 61, 0.16);
 }
 
+.capture-processing-card h1,
 .review-card h1,
 .fatal-card h1,
 .complete-card h1 {
   margin: 6px 0 16px;
+}
+
+.capture-processing-card {
+  text-align: center;
+}
+
+.capture-processing-preview {
+  position: relative;
+  width: min(88vw, 54vh, 430px);
+  width: min(88vw, 54dvh, 430px);
+  aspect-ratio: 85.6 / 53.98;
+  margin: 0 auto 18px;
+  overflow: hidden;
+  border: 3px solid #24d28c;
+  border-radius: 17px;
+  background: #05090d;
+}
+
+.capture-processing-preview.is-passport {
+  aspect-ratio: 125 / 88;
+}
+
+#capture-processing-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.capture-processing-spinner {
+  position: absolute;
+  inset: 50% auto auto 50%;
+  width: 54px;
+  height: 54px;
+  border: 5px solid rgba(255, 255, 255, 0.5);
+  border-top-color: #ffffff;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  animation: capture-processing-spin 760ms linear infinite;
+  filter: drop-shadow(0 2px 5px rgba(5, 9, 13, 0.45));
+}
+
+.capture-processing-spinner[hidden] {
+  display: none;
+}
+
+.capture-processing-status {
+  min-height: 24px;
+  margin: 0;
+  line-height: 1.45;
+}
+
+.capture-processing.is-error .capture-processing-preview {
+  border-color: #c83b43;
+}
+
+.capture-processing.is-error .capture-processing-card h1 {
+  color: #a52630;
+}
+
+#capture-processing-retry {
+  width: 100%;
+}
+
+@keyframes capture-processing-spin {
+  to {
+    transform: translate(-50%, -50%) rotate(360deg);
+  }
 }
 
 .preview-frame {
