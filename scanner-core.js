@@ -1157,7 +1157,12 @@ function documentTextureMetrics(
 
 export function analyzeDocumentPresence(
   image,
-  { regionRect = null, regionQuad = null, slot = 'generic' } = {},
+  {
+    regionRect = null,
+    regionQuad = null,
+    slot = 'generic',
+    liveQualified = false,
+  } = {},
 ) {
   assertImageShape(image);
   const fullRect = { x: 0, y: 0, width: image.width, height: image.height };
@@ -1196,10 +1201,11 @@ export function analyzeDocumentPresence(
     slot,
   );
   gray.data.fill(0);
+  const accepted = metrics.accepted || liveQualified === true;
   return {
-    accepted: metrics.accepted,
-    status: metrics.accepted ? 'accepted' : 'document',
-    message: metrics.accepted
+    accepted,
+    status: accepted ? 'accepted' : 'document',
+    message: accepted
       ? 'Dokument erkannt.'
       : 'Kein Dokument erkannt. Bitte nur den Ausweis oder Pass in den Rahmen halten.',
     metrics,

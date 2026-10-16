@@ -990,7 +990,7 @@ test('strict live gate accepts a printed document surface and rejects keyboards'
   }
 });
 
-test('live guide accepts a softly focused smaller ID while final checks stay strict', () => {
+test('a live-qualified softly focused ID survives only the automatic-capture presence gate', () => {
   const guide = { x: 35, y: 201, width: 410, height: 259 };
   const card = { x: 76, y: 227, width: 328, height: 207 };
   const softDocument = plausibleDocumentFixture({
@@ -1017,7 +1017,26 @@ test('live guide accepts a softly focused smaller ID while final checks stay str
   assert.equal(
     frozen.accepted,
     false,
-    'the tolerant live guide must not weaken frozen-frame validation',
+    'the strict reusable document gate must remain unchanged',
+  );
+
+  const automaticCapture = analyzeDocumentPresence(softDocument, {
+    // The real automatic capture rechecks the frozen guide crop, not the
+    // tighter edge box found by the live detector.
+    regionRect: guide,
+    slot: 'id-front',
+    liveQualified: true,
+  });
+  assert.equal(
+    automaticCapture.accepted,
+    true,
+    'a frame that already sustained the green live gate must not fail a stricter duplicate texture gate',
+  );
+  assert.equal(automaticCapture.metrics.accepted, false);
+  assert.equal(
+    automaticCapture.metrics.liveAccepted,
+    false,
+    'the frozen crop may score differently; the attestation comes from the sustained live gate',
   );
 });
 

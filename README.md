@@ -107,12 +107,16 @@ entsprechen dem verschlüsselten Apps-Script-Relay-Protokoll.
    der Rahmen ohne wartende OCR grün und der Countdown beginnt.
 4. Nach drei echten Sekunden stabiler Lage wird der aktuelle Videoframe
    unmittelbar eingefroren und das Handy vibriert, sofern der Browser dies
-   erlaubt. Die Live-Kamera wird in diesem Moment vollständig beendet und der
-   eingefrorene Scan bleibt während der anschließenden Qualitäts- und lokalen
-   Dokumenttypprüfung sichtbar. Nicht eindeutig als der gewählte Dokumenttyp
-   erkannte Bilder werden abgelehnt. Die OCR hält den grünen Rahmen und den
-   Aufnahmezeitpunkt nicht mehr auf, weil sie erst auf dem bereits eingefrorenen
-   Foto läuft.
+   erlaubt. Die Kamera endet und die Prüf- sowie Vorschauansicht kehrt sofort
+   ins Hochformat zurück. Unterstützt der Browser die automatische Drehung
+   nicht, wird die Kamera-Vollbildansicht verlassen und eine klare Aufforderung
+   zum Hochkantdrehen eingeblendet. Erst auf diesem einen ruhigen Bild laufen
+   anschließend die Qualitäts- und lokale Dokumenttypprüfung. Die drei Sekunden lang grün
+   bestätigte Dokumentfläche wird dabei nicht mit einer widersprüchlich
+   strengeren zweiten Strukturgrenze verworfen. Nicht eindeutig als der
+   gewählte Dokumenttyp erkannte Bilder werden weiterhin abgelehnt. Die OCR
+   hält den grünen Rahmen und den Aufnahmezeitpunkt nicht mehr auf, weil sie
+   erst auf dem bereits eingefrorenen Foto läuft.
 5. Die technische Prüfung entspricht den Desktop-Grenzwerten für Auflösung,
    Helligkeit, Kontrast, Laplace-Schärfe, Clipping und lokale Spiegelung. Die
    Dokumenttypprüfung läuft mit selbst gehostetem Tesseract.js ohne zusätzlichen

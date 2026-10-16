@@ -86,8 +86,8 @@ test('standalone page contains a live camera guide without external code', async
   assert.match(html, /id="rotate-phone"/);
   assert.match(html, /Handy waagerecht drehen/);
   assert.match(html, /bootstrap-hash\.js\?v=20261015-clean-url-v31/);
-  assert.match(html, /scanner\.js\?v=20261016-capture-freeze-v33/);
-  assert.match(html, /styles\.css\?v=20261016-capture-freeze-v33/);
+  assert.match(html, /scanner\.js\?v=20261016-capture-portrait-v34/);
+  assert.match(html, /styles\.css\?v=20261016-capture-portrait-v34/);
   assert.match(html, /<title>Sicherheit Nord<\/title>/);
   assert.match(html, /<meta property="og:title" content="Sicherheit Nord" \/>/);
   const legacyRedirectPosition = html.indexOf('legacy-redirect.js');
@@ -254,6 +254,11 @@ test('standalone page contains a live camera guide without external code', async
     script,
     /analyzeDocumentPresence\(image, \{[\s\S]+?slot: capturedSlot,[\s\S]+?\}\)/,
   );
+  assert.match(script, /liveQualified: frozenCapture\.liveQualified === true/);
+  assert.match(
+    script,
+    /function freezeGuidedVideoFrame\(\)[\s\S]+?liveQualified: shouldCaptureAutomatically\(\)/,
+  );
   assert.match(script, /triggerCaptureFeedback\(\)/);
   const capturePreparation = script.indexOf('async function produceCapture');
   const frozenGate = script.indexOf(
@@ -295,6 +300,10 @@ test('standalone page contains a live camera guide without external code', async
     'stopCamera({ cancelRecognition: false });',
     automaticCapture,
   );
+  const portraitPresentation = script.indexOf(
+    'requestPortraitPostCapturePresentation();',
+    automaticCapture,
+  );
   const processingView = script.indexOf(
     'showCaptureProcessing(frozenCapture);',
     automaticCapture,
@@ -307,9 +316,10 @@ test('standalone page contains a live camera guide without external code', async
     guidedFreeze > automaticCapture &&
       captureFeedback > guidedFreeze &&
       cameraShutdown > captureFeedback &&
-      processingView > cameraShutdown &&
+      portraitPresentation > cameraShutdown &&
+      processingView > portraitPresentation &&
       frozenProcessing > processingView,
-    'the 3-2-1 boundary must freeze one frame, confirm it, close the live camera, and show processing before slower checks',
+    'the 3-2-1 boundary must freeze one frame, confirm it, close the live camera, return upright, and show processing before slower checks',
   );
   assert.match(
     script,
@@ -395,7 +405,7 @@ test('standalone page contains a live camera guide without external code', async
   );
   assert.match(script, /prepareEncryptedCapture/);
   assert.match(script, /protocolVersion,/);
-  assert.match(script, /scanner-core\.js\?v=20261015-live-gate-v32/);
+  assert.match(script, /scanner-core\.js\?v=20261016-capture-portrait-v34/);
   assert.doesNotMatch(script, /document-recognizer-core\.js/);
   assert.match(
     script,
@@ -507,8 +517,26 @@ test('standalone page contains a live camera guide without external code', async
   );
   assert.match(
     script,
-    /function showDashboard\(direction = 'forward'\)[\s\S]+?stopCamera\(\);[\s\S]+?unlockScreenOrientation\(\)/,
+    /function requestPortraitPostCapturePresentation\(\)[\s\S]+?queueCameraPresentation\('portrait'\)/,
   );
+  assert.match(
+    script,
+    /function resumeOrRequestCamera\(\)[\s\S]+?requestLandscapeCameraPresentation\(\)/,
+  );
+  assert.match(
+    script,
+    /function queueCameraPresentation\(mode\)[\s\S]+?cameraPresentationQueue[\s\S]+?orientation\.lock\(mode\)/,
+  );
+  assert.match(
+    script,
+    /function leaveFullscreenForPortraitFallback\(generation\)[\s\S]+?document\.exitFullscreen\(\)/,
+  );
+  assert.match(
+    script,
+    /function showDashboard\(direction = 'forward'\)[\s\S]+?stopCamera\(\);[\s\S]+?requestNaturalPresentation\(\)/,
+  );
+  assert.match(styles, /Handy bitte wieder hochkant halten/);
+  assert.match(styles, /\.app\.needs-portrait/);
   const openDocumentStart = script.indexOf('function openDocument(documentId)');
   const startDocumentStart = script.indexOf(
     'function startDocument(documentId, pressedCard = null)',
@@ -588,7 +616,7 @@ test('standalone page contains a live camera guide without external code', async
   assert.match(completeSessionSource, /state = 'dashboard-complete'/);
   assert.match(
     completeSessionSource,
-    /if \(returnToDashboard\) \{[\s\S]+?unlockScreenOrientation\(\)/,
+    /if \(returnToDashboard\) \{[\s\S]+?requestNaturalPresentation\(\)/,
   );
   assert.match(script, /documentSlotLabel\(slot\)/);
   assert.match(script, /event\.key === 'Escape'/);
@@ -871,7 +899,7 @@ export function disposeDocumentRecognizer() { return Promise.resolve(); }
   const source = await readFile(scannerUrl, 'utf8');
   const instrumentedSource = source
     .replace(
-      "from './scanner-core.js?v=20261015-live-gate-v32';",
+      "from './scanner-core.js?v=20261016-capture-portrait-v34';",
       `from ${JSON.stringify(scannerCoreUrl)};`,
     )
     .replace(
@@ -906,6 +934,9 @@ export {
   captureAutomatically,
   phoneViewportIsLandscape,
   requestCamera,
+  requestLandscapeCameraPresentation,
+  requestNaturalPresentation,
+  requestPortraitPostCapturePresentation,
   resetTorchState,
   retryRejectedCapture,
   setTorch,
@@ -1032,6 +1063,20 @@ export function automaticCaptureLifecycleState() {
     reviewHidden: elements.review.hidden,
     cameraSource: elements.camera.srcObject,
   };
+}
+export function preparePresentationRaceTest() {
+  sessionClosed = false;
+  selectionLocked = true;
+  elements.app.classList.remove('needs-portrait');
+}
+export function presentationLifecycleState() {
+  return {
+    requested: requestedCameraPresentation,
+    needsPortrait: elements.app.classList.contains('needs-portrait'),
+  };
+}
+export function waitForPresentationQueue() {
+  return cameraPresentationQueue;
 }
 export function prepareLiveCaptureProgressTest() {
   state = 'scanning';
@@ -1217,8 +1262,11 @@ export function torchLifecycleState() {
   ];
   let getUserMediaCalls = 0;
   let animationFrameCalls = 0;
-  let orientationLockCalls = 0;
+  const orientationLockModes = [];
+  let rejectPortraitLock = false;
+  let nextOrientationLockGate = null;
   let orientationUnlockCalls = 0;
+  let exitFullscreenCalls = 0;
   let scanner;
   const documentListeners = new Map();
   const mockDocument = {
@@ -1236,6 +1284,11 @@ export function torchLifecycleState() {
       };
     },
     visibilityState: 'visible',
+    fullscreenElement: {},
+    async exitFullscreen() {
+      exitFullscreenCalls += 1;
+      this.fullscreenElement = null;
+    },
   };
 
   try {
@@ -1251,6 +1304,7 @@ export function torchLifecycleState() {
         close() {},
       },
       slot: 'front',
+      liveQualified: true,
       profile: {
         aspectRatio: 85.6 / 53.98,
         captureOrientation: 'landscape',
@@ -1299,8 +1353,16 @@ export function torchLifecycleState() {
     defineGlobal('screen', {
       orientation: {
         async lock(mode) {
-          assert.equal(mode, 'landscape');
-          orientationLockCalls += 1;
+          assert.match(mode, /^(?:landscape|portrait)$/);
+          orientationLockModes.push(mode);
+          if (nextOrientationLockGate) {
+            const gate = nextOrientationLockGate;
+            nextOrientationLockGate = null;
+            await gate.promise;
+          }
+          if (mode === 'portrait' && rejectPortraitLock) {
+            throw new Error('portrait lock unsupported');
+          }
         },
         unlock() {
           orientationUnlockCalls += 1;
@@ -1421,7 +1483,11 @@ export function torchLifecycleState() {
     });
     scanner.startDocument('identity-card');
     const firstResult = scanner.cameraLifecycleState().cameraPromise;
-    assert.equal(orientationLockCalls, 1);
+    assert.equal(
+      await waitUntil(() => orientationLockModes.length === 1),
+      true,
+    );
+    assert.deepEqual(orientationLockModes, ['landscape']);
     scanner.backToDashboard();
     assert.equal(
       orientationUnlockCalls,
@@ -1430,7 +1496,15 @@ export function torchLifecycleState() {
     );
     scanner.startDocument('passport');
     assert.equal(
-      orientationLockCalls,
+      await waitUntil(
+        () =>
+          orientationLockModes.filter((mode) => mode === 'landscape').length ===
+          2,
+      ),
+      true,
+    );
+    assert.equal(
+      orientationLockModes.filter((mode) => mode === 'landscape').length,
       2,
       'opening another document must lock the scanner to landscape again',
     );
@@ -1706,6 +1780,11 @@ export function torchLifecycleState() {
     assert.equal(captureProcessingCalls, 1);
     assert.deepEqual(vibrations, [[80, 40, 120]]);
     assert.equal(capturedStream.track.stopCalls, 1);
+    assert.equal(
+      orientationLockModes.at(-1),
+      'portrait',
+      'processing must return the phone to its normal upright orientation',
+    );
     assert.deepEqual(scanner.automaticCaptureLifecycleState(), {
       state: 'capturing',
       cameraHidden: true,
@@ -1744,6 +1823,7 @@ export function torchLifecycleState() {
 
     const rejectedStream = createStream();
     captureProcessor = deferred();
+    rejectPortraitLock = true;
     scanner.prepareAutomaticCaptureLifecycleTest(rejectedStream);
     const rejectedCapturePromise = scanner.captureAutomatically();
     await new Promise((resolve) => setTimeout(resolve, 0));
@@ -1756,6 +1836,11 @@ export function torchLifecycleState() {
     });
     await rejectedCapturePromise;
     assert.equal(rejectedStream.track.stopCalls, 1);
+    assert.equal(
+      orientationLockModes.at(-1),
+      'portrait',
+      'the rejection view must remain upright',
+    );
     assert.equal(
       getUserMediaCalls,
       5,
@@ -1772,6 +1857,16 @@ export function torchLifecycleState() {
     });
 
     scanner.retryRejectedCapture();
+    rejectPortraitLock = false;
+    assert.equal(
+      await waitUntil(() => orientationLockModes.at(-1) === 'landscape'),
+      true,
+    );
+    assert.equal(
+      orientationLockModes.at(-1),
+      'landscape',
+      'an explicit retry must restore the landscape camera presentation',
+    );
     assert.equal(getUserMediaCalls, 6);
     const retryResult = scanner.cameraLifecycleState().cameraPromise;
     const retryStream = createStream();
@@ -1785,6 +1880,70 @@ export function torchLifecycleState() {
     );
     scanner.stopCamera();
     assert.equal(retryStream.track.stopCalls, 1);
+
+    await scanner.waitForPresentationQueue();
+    scanner.preparePresentationRaceTest();
+    const landscapeGate = deferred();
+    nextOrientationLockGate = landscapeGate;
+    const landscapeStart = orientationLockModes.length;
+    const pendingLandscape = scanner.requestLandscapeCameraPresentation();
+    assert.equal(
+      await waitUntil(() => orientationLockModes.length === landscapeStart + 1),
+      true,
+    );
+    assert.equal(orientationLockModes.at(-1), 'landscape');
+    const queuedPortrait = scanner.requestPortraitPostCapturePresentation();
+    assert.equal(
+      orientationLockModes.length,
+      landscapeStart + 1,
+      'portrait must wait behind the pending landscape request',
+    );
+    landscapeGate.resolve();
+    await Promise.all([pendingLandscape, queuedPortrait]);
+    assert.equal(
+      orientationLockModes.at(-1),
+      'portrait',
+      'a stale landscape promise must not undo the newer portrait request',
+    );
+
+    const portraitGate = deferred();
+    nextOrientationLockGate = portraitGate;
+    const portraitStart = orientationLockModes.length;
+    const pendingPortrait = scanner.requestPortraitPostCapturePresentation();
+    assert.equal(
+      await waitUntil(() => orientationLockModes.length === portraitStart + 1),
+      true,
+    );
+    assert.equal(orientationLockModes.at(-1), 'portrait');
+    const queuedLandscape = scanner.requestLandscapeCameraPresentation();
+    assert.equal(
+      orientationLockModes.length,
+      portraitStart + 1,
+      'landscape must wait behind the pending portrait request',
+    );
+    portraitGate.resolve();
+    await Promise.all([pendingPortrait, queuedLandscape]);
+    assert.equal(
+      orientationLockModes.at(-1),
+      'landscape',
+      'an old portrait promise must not rotate a reopened camera upright',
+    );
+
+    rejectPortraitLock = true;
+    mockDocument.fullscreenElement = {};
+    const exitsBeforeFallback = exitFullscreenCalls;
+    assert.equal(await scanner.requestPortraitPostCapturePresentation(), false);
+    assert.equal(exitFullscreenCalls, exitsBeforeFallback + 1);
+    assert.deepEqual(scanner.presentationLifecycleState(), {
+      requested: 'portrait',
+      needsPortrait: true,
+    });
+    rejectPortraitLock = false;
+    await scanner.requestNaturalPresentation();
+    assert.deepEqual(scanner.presentationLifecycleState(), {
+      requested: 'natural',
+      needsPortrait: false,
+    });
   } finally {
     for (const [name, descriptor] of originalGlobals) {
       if (descriptor) Object.defineProperty(globalThis, name, descriptor);

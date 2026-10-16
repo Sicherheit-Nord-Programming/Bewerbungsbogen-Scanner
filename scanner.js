@@ -21,7 +21,7 @@ import {
   portraitCaptureLayout,
   scannerDocumentsForVersion,
   updateHoldState,
-} from './scanner-core.js?v=20261015-live-gate-v32';
+} from './scanner-core.js?v=20261016-capture-portrait-v34';
 import {
   cancelDocumentRecognition,
   disposeDocumentRecognizer,
@@ -162,6 +162,8 @@ let captureFeedbackTimer = 0;
 let orientationRefreshFrame = 0;
 let orientationResumeFrame = 0;
 let cameraPresentationGeneration = 0;
+let cameraPresentationQueue = Promise.resolve(false);
+let requestedCameraPresentation = 'natural';
 let documentOpenPending = false;
 let activeViewAnimation = null;
 let activeViewAnimationTarget = null;
@@ -345,46 +347,104 @@ function resumeAnalysisWhenCameraReady() {
   resume();
 }
 
-async function requestLandscapeCameraPresentation() {
-  const generation = ++cameraPresentationGeneration;
-  try {
-    if (
-      !document.fullscreenElement &&
-      typeof document.documentElement?.requestFullscreen === 'function'
-    ) {
-      await document.documentElement.requestFullscreen({
-        navigationUI: 'hide',
-      });
-    }
-  } catch {
-    // Fullscreen is best effort; the landscape gate below remains reliable.
-  }
-  if (
-    generation !== cameraPresentationGeneration ||
-    sessionClosed ||
-    !selectionLocked
-  ) {
-    return;
-  }
-  try {
-    await globalThis.screen?.orientation?.lock?.('landscape');
-    if (
-      generation !== cameraPresentationGeneration &&
-      (sessionClosed || !selectionLocked)
-    ) {
-      unlockScreenOrientation();
-    }
-  } catch {
-    // iOS and orientation-locked phones may reject this request.
-  }
-}
-
 function unlockScreenOrientation() {
   try {
     globalThis.screen?.orientation?.unlock?.();
   } catch {
     // The overview still works when a browser manages orientation itself.
   }
+}
+
+function cameraPresentationIsCurrent(generation, mode) {
+  return (
+    generation === cameraPresentationGeneration &&
+    requestedCameraPresentation === mode &&
+    (mode !== 'landscape' || (!sessionClosed && selectionLocked))
+  );
+}
+
+async function leaveFullscreenForPortraitFallback(generation) {
+  if (!cameraPresentationIsCurrent(generation, 'portrait')) return;
+  try {
+    if (
+      document.fullscreenElement &&
+      typeof document.exitFullscreen === 'function'
+    ) {
+      await document.exitFullscreen();
+    }
+  } catch {
+    // The upright prompt remains visible even when fullscreen cannot exit.
+  }
+  if (cameraPresentationIsCurrent(generation, 'portrait')) {
+    unlockScreenOrientation();
+  }
+}
+
+function queueCameraPresentation(mode) {
+  const generation = ++cameraPresentationGeneration;
+  requestedCameraPresentation = mode;
+  elements.app.classList.toggle('needs-portrait', mode === 'portrait');
+
+  // Release the old landscape lock immediately. The queued call below repeats
+  // the unlock after every older pending request, so no late promise can put a
+  // result screen back into landscape.
+  if (mode !== 'landscape') unlockScreenOrientation();
+
+  const operation = cameraPresentationQueue
+    .catch(() => false)
+    .then(async () => {
+      if (!cameraPresentationIsCurrent(generation, mode)) return false;
+      if (mode === 'natural') {
+        unlockScreenOrientation();
+        return true;
+      }
+      if (mode === 'landscape') {
+        try {
+          if (
+            !document.fullscreenElement &&
+            typeof document.documentElement?.requestFullscreen === 'function'
+          ) {
+            await document.documentElement.requestFullscreen({
+              navigationUI: 'hide',
+            });
+          }
+        } catch {
+          // Fullscreen is best effort; the physical landscape gate remains.
+        }
+        if (!cameraPresentationIsCurrent(generation, mode)) return false;
+      }
+
+      try {
+        const orientation = globalThis.screen?.orientation;
+        if (typeof orientation?.lock !== 'function') {
+          throw new Error('orientation lock unavailable');
+        }
+        await orientation.lock(mode);
+        return cameraPresentationIsCurrent(generation, mode);
+      } catch {
+        if (!cameraPresentationIsCurrent(generation, mode)) return false;
+        unlockScreenOrientation();
+        if (mode === 'portrait') {
+          await leaveFullscreenForPortraitFallback(generation);
+        }
+        return false;
+      }
+    });
+  cameraPresentationQueue = operation;
+  return operation;
+}
+
+function requestLandscapeCameraPresentation() {
+  if (sessionClosed || !selectionLocked) return Promise.resolve(false);
+  return queueCameraPresentation('landscape');
+}
+
+function requestPortraitPostCapturePresentation() {
+  return queueCameraPresentation('portrait');
+}
+
+function requestNaturalPresentation() {
+  return queueCameraPresentation('natural');
 }
 
 function setProgress(percent) {
@@ -1084,6 +1144,11 @@ function freezeGuidedVideoFrame() {
   return {
     still,
     slot: side,
+    // `captureAutomatically` is reached only after this frame position held
+    // the live document gate for three seconds. Preserve that qualification
+    // with the frozen snapshot so the later duplicate texture gate cannot
+    // contradict the green capture signal.
+    liveQualified: shouldCaptureAutomatically(),
     profile: {
       aspectRatio: profile.aspectRatio,
       captureOrientation: profile.captureOrientation,
@@ -1244,6 +1309,7 @@ function clearTaxIdEntry() {
 function showCaptureReview(result, consentCopy) {
   acceptedCapture = result;
   stopCamera();
+  void requestPortraitPostCapturePresentation();
   elements.cameraStage.hidden = true;
   clearCaptureProcessing();
   previewUrl = URL.createObjectURL(result.blob);
@@ -1479,6 +1545,10 @@ async function produceCapture(frozenCapture, capturedCameraGeneration) {
     }
     const documentPresence = analyzeDocumentPresence(image, {
       slot: capturedSlot,
+      // This exact frame already held the green live-document gate for three
+      // seconds. Do not reject it again with a stricter duplicate texture
+      // threshold; quality and document-type OCR still run below.
+      liveQualified: frozenCapture.liveQualified === true,
     });
     if (!documentPresence.accepted) {
       image.data.fill(0);
@@ -1735,7 +1805,7 @@ function renderDashboard() {
 function showDashboard(direction = 'forward') {
   stopCamera();
   clearCaptureProcessing();
-  unlockScreenOrientation();
+  void requestNaturalPresentation();
   clearTaxIdEntry();
   elements.loading.hidden = true;
   elements.cameraStage.hidden = true;
@@ -1987,6 +2057,7 @@ function resumeSelectedDocumentAfterClaim() {
 
 function resumeOrRequestCamera() {
   if (sessionClosed) return;
+  void requestLandscapeCameraPresentation();
   state = 'scanning';
   if (mediaStream) {
     if (updatePhoneOrientation()) beginAnalysis();
@@ -2033,6 +2104,7 @@ async function captureAutomatically() {
     captureConfirmed = true;
     stopCamera({ cancelRecognition: false });
     const capturedCameraGeneration = cameraGeneration;
+    void requestPortraitPostCapturePresentation();
     showCaptureProcessing(frozenCapture);
 
     // Give the browser one rendering opportunity to replace the live camera
@@ -2443,7 +2515,7 @@ function completeSession(returnToDashboard = false) {
   elements.fatal.hidden = true;
   elements.app.setAttribute('aria-busy', 'false');
   if (returnToDashboard) {
-    unlockScreenOrientation();
+    void requestNaturalPresentation();
     selectedDocumentIds.clear();
     selectionLocked = false;
     state = 'dashboard-complete';

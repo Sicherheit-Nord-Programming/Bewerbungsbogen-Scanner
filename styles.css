@@ -1,11 +1,7 @@
 :root {
   color-scheme: dark;
   font-family:
-    system-ui,
-    -apple-system,
-    BlinkMacSystemFont,
-    'Segoe UI',
-    sans-serif;
+    system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   color: #fff;
   background: #05090d;
   -webkit-tap-highlight-color: transparent;
@@ -957,6 +953,24 @@ button {
 
 .capture-processing.is-error .capture-processing-card h1 {
   color: #a52630;
+}
+
+@media (orientation: landscape) {
+  .app.needs-portrait .capture-processing:not([hidden])::before,
+  .app.needs-portrait .review:not([hidden])::before {
+    position: fixed;
+    z-index: 30;
+    inset: 0;
+    display: grid;
+    padding: 24px;
+    place-items: center;
+    color: #fff;
+    background: rgba(4, 10, 15, 0.92);
+    content: 'Handy bitte wieder hochkant halten.';
+    font-size: clamp(1.15rem, 4vw, 1.55rem);
+    font-weight: 820;
+    text-align: center;
+  }
 }
 
 #capture-processing-retry {
