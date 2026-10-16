@@ -55,6 +55,8 @@ const UPLOAD_CONCURRENCY = 4;
 const TAX_ID_PAGE_WIDTH = 1_400;
 const TAX_ID_PAGE_HEIGHT = 1_980;
 const CAMERA_FRAME_INSTRUCTION = 'Ausweis vollständig in den Rahmen halten.';
+const ID_CARD_BACK_FRAME_INSTRUCTION =
+  'Personalausweis – Rückseite: Bitte drehen und vollständig in den Rahmen halten.';
 
 const elements = Object.fromEntries(
   [
@@ -180,7 +182,7 @@ const SLOT_PROFILES = Object.freeze({
     title: 'Rückseite Personalausweis',
     aspectRatio: ID_CARD_ASPECT_RATIO,
     captureOrientation: 'landscape',
-    instruction: CAMERA_FRAME_INSTRUCTION,
+    instruction: ID_CARD_BACK_FRAME_INSTRUCTION,
   },
   'id-front': {
     title: 'Vorderseite Personalausweis',
@@ -192,7 +194,7 @@ const SLOT_PROFILES = Object.freeze({
     title: 'Rückseite Personalausweis',
     aspectRatio: ID_CARD_ASPECT_RATIO,
     captureOrientation: 'landscape',
-    instruction: CAMERA_FRAME_INSTRUCTION,
+    instruction: ID_CARD_BACK_FRAME_INSTRUCTION,
   },
   'passport-data': {
     title: 'Datenseite Reisepass',
@@ -1056,7 +1058,7 @@ function applyLiveObservation(observation, timestamp, frameSize) {
       elements.countdown.textContent = holdState.countdown || '';
     }
   } else {
-    elements.cameraStatus.textContent = CAMERA_FRAME_INSTRUCTION;
+    elements.cameraStatus.textContent = activeProfile().instruction;
     elements.countdown.textContent = '';
   }
   return visuallyValid;
@@ -1127,7 +1129,7 @@ function beginAnalysis() {
         }
       } catch {
         setGuide(false);
-        setCameraMessage(CAMERA_FRAME_INSTRUCTION);
+        setCameraMessage(activeProfile().instruction);
       }
     }
     analysisFrame = requestAnimationFrame(loop);

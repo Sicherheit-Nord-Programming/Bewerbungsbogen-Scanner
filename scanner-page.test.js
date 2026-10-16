@@ -86,7 +86,7 @@ test('standalone page contains a live camera guide without external code', async
   assert.match(html, /id="rotate-phone"/);
   assert.match(html, /Handy waagerecht drehen/);
   assert.match(html, /bootstrap-hash\.js\?v=20261016-resume-v35/);
-  assert.match(html, /scanner\.js\?v=20261016-resume-v35/);
+  assert.match(html, /scanner\.js\?v=20261016-back-guide-v37/);
   assert.match(html, /styles\.css\?v=20261016-review-spacing-v36/);
   assert.match(html, /<title>Sicherheit Nord<\/title>/);
   assert.match(html, /<meta property="og:title" content="Sicherheit Nord" \/>/);
@@ -193,6 +193,10 @@ test('standalone page contains a live camera guide without external code', async
   assert.match(
     script,
     /CAMERA_FRAME_INSTRUCTION = 'Ausweis vollständig in den Rahmen halten\.'/,
+  );
+  assert.match(
+    script,
+    /ID_CARD_BACK_FRAME_INSTRUCTION =\s*'Personalausweis – Rückseite: Bitte drehen und vollständig in den Rahmen halten\.'/,
   );
   assert.doesNotMatch(script, /Oberkante oben|Handy waagerecht halten/);
   assert.match(script, /Bitte stillhalten\. Dokument wird geprüft …/);
@@ -376,7 +380,15 @@ test('standalone page contains a live camera guide without external code', async
   );
   assert.equal(
     (script.match(/instruction: CAMERA_FRAME_INSTRUCTION/g) ?? []).length,
-    7,
+    5,
+  );
+  assert.equal(
+    (script.match(/instruction: ID_CARD_BACK_FRAME_INSTRUCTION/g) ?? []).length,
+    2,
+  );
+  assert.match(
+    script,
+    /elements\.cameraStatus\.textContent = activeProfile\(\)\.instruction;/,
   );
   assert.doesNotMatch(script, /PORTRAIT_GUIDE_|ID_CARD_GUIDE_|guideOutline/);
   assert.match(
