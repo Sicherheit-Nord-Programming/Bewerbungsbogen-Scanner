@@ -660,14 +660,11 @@ button {
 }
 
 .preview-frame.is-passport {
-  width: min(88vw, 54vh, 430px);
-  width: min(88vw, 54dvh, 430px);
   aspect-ratio: 125 / 88;
 }
 
 .preview-frame.is-tax-id {
-  width: min(82vw, 42vh, 360px);
-  width: min(82vw, 42dvh, 360px);
+  max-width: 360px;
   aspect-ratio: 210 / 297;
   border-radius: 12px;
 }
@@ -879,6 +876,11 @@ button {
   display: none;
 }
 
+.review {
+  padding-left: max(16px, calc(env(safe-area-inset-left) + 12px));
+  padding-right: max(16px, calc(env(safe-area-inset-right) + 12px));
+}
+
 .capture-processing-card,
 .review-card,
 .fatal-card,
@@ -903,8 +905,8 @@ button {
 
 .capture-processing-preview {
   position: relative;
-  width: min(88vw, 54vh, 430px);
-  width: min(88vw, 54dvh, 430px);
+  width: 100%;
+  max-width: 430px;
   aspect-ratio: 85.6 / 53.98;
   margin: 0 auto 18px;
   overflow: hidden;
@@ -985,8 +987,8 @@ button {
 
 .preview-frame {
   position: relative;
-  width: min(88vw, 54vh, 430px);
-  width: min(88vw, 54dvh, 430px);
+  width: 100%;
+  max-width: 430px;
   aspect-ratio: 85.6 / 53.98;
   margin: 0 auto;
   overflow: hidden;
@@ -1008,7 +1010,7 @@ button {
   display: block;
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
 }
 
 .preview-frame.is-tax-id #preview {
@@ -1088,8 +1090,8 @@ button {
   }
 
   .preview-frame {
-    width: min(74vw, 70vh, 380px);
-    width: min(74vw, 70dvh, 380px);
+    max-width: min(74vw, 70vh, 380px);
+    max-width: min(74dvw, 70dvh, 380px);
   }
 
   .countdown {

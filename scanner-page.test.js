@@ -87,7 +87,7 @@ test('standalone page contains a live camera guide without external code', async
   assert.match(html, /Handy waagerecht drehen/);
   assert.match(html, /bootstrap-hash\.js\?v=20261016-resume-v35/);
   assert.match(html, /scanner\.js\?v=20261016-resume-v35/);
-  assert.match(html, /styles\.css\?v=20261016-resume-v35/);
+  assert.match(html, /styles\.css\?v=20261016-review-spacing-v36/);
   assert.match(html, /<title>Sicherheit Nord<\/title>/);
   assert.match(html, /<meta property="og:title" content="Sicherheit Nord" \/>/);
   const legacyRedirectPosition = html.indexOf('legacy-redirect.js');
@@ -773,7 +773,7 @@ test('standalone page contains a live camera guide without external code', async
   assert.ok(previewRule);
   assert.match(previewRule, /width:\s*100%/);
   assert.match(previewRule, /height:\s*100%/);
-  assert.match(previewRule, /object-fit:\s*cover/);
+  assert.match(previewRule, /object-fit:\s*contain/);
   assert.doesNotMatch(previewRule, /rotate\(90deg\)/);
   assert.match(
     styles,
@@ -788,16 +788,20 @@ test('standalone page contains a live camera guide without external code', async
   )?.[1];
   assert.ok(previewFrameRule);
   assert.doesNotMatch(previewFrameRule, /border:\s*3px/);
-  assert.match(previewFrameRule, /width:\s*min\(88vw,\s*54vh,\s*430px\)/);
-  assert.match(previewFrameRule, /width:\s*min\(88vw,\s*54dvh,\s*430px\)/);
+  assert.match(previewFrameRule, /width:\s*100%/);
+  assert.match(previewFrameRule, /max-width:\s*430px/);
   assert.match(previewFrameRule, /aspect-ratio:\s*85\.6\s*\/\s*53\.98/);
+  assert.match(
+    styles,
+    /\.review\s*\{[\s\S]+?padding-left:\s*max\(16px,\s*calc\(env\(safe-area-inset-left\) \+ 12px\)\)[\s\S]+?padding-right:\s*max\(16px,\s*calc\(env\(safe-area-inset-right\) \+ 12px\)\)/,
+  );
   assert.match(
     styles,
     /\.preview-frame::after\s*\{[\s\S]+?inset:\s*0[\s\S]+?border:\s*3px solid #24d28c/,
   );
   assert.match(
     styles,
-    /@media \(orientation: landscape\)[\s\S]+?\.id-guide\s*\{[\s\S]+?width:\s*min\(94dvw,\s*140dvh,\s*1100px\)[\s\S]+?\.preview-frame\s*\{[\s\S]+?width:\s*min\(74vw,\s*70dvh,\s*380px\)/,
+    /@media \(orientation: landscape\)[\s\S]+?\.id-guide\s*\{[\s\S]+?width:\s*min\(94dvw,\s*140dvh,\s*1100px\)[\s\S]+?\.preview-frame\s*\{[\s\S]+?max-width:\s*min\(74dvw,\s*70dvh,\s*380px\)/,
   );
   assert.match(
     styles,
