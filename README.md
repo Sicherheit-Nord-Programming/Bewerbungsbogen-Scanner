@@ -110,18 +110,17 @@ entsprechen dem verschlüsselten Apps-Script-Relay-Protokoll.
    erlaubt. Die Kamera endet und die Prüf- sowie Vorschauansicht kehrt sofort
    ins Hochformat zurück. Unterstützt der Browser die automatische Drehung
    nicht, wird die Kamera-Vollbildansicht verlassen und eine klare Aufforderung
-   zum Hochkantdrehen eingeblendet. Erst auf diesem einen ruhigen Bild laufen
-   anschließend die Qualitäts- und lokale Dokumenttypprüfung. Die drei Sekunden lang grün
-   bestätigte Dokumentfläche wird dabei nicht mit einer widersprüchlich
-   strengeren zweiten Strukturgrenze verworfen. Nicht eindeutig als der
-   gewählte Dokumenttyp erkannte Bilder werden weiterhin abgelehnt. Die OCR
-   hält den grünen Rahmen und den Aufnahmezeitpunkt nicht mehr auf, weil sie
-   erst auf dem bereits eingefrorenen Foto läuft.
+   zum Hochkantdrehen eingeblendet. Eine drei Sekunden lang grün bestätigte
+   Standardaufnahme wird direkt verarbeitet: Die bereits bestandene
+   Dokumentprüfung wird nicht mit einer zweiten Strukturgrenze oder einer
+   blockierenden OCR wiederholt. Bei manuell bereitgestellten Bildern und der
+   Steuer-ID-Aufnahme bleiben die zusätzlichen Dokument- und OCR-Prüfungen
+   erhalten.
 5. Die technische Prüfung entspricht den Desktop-Grenzwerten für Auflösung,
    Helligkeit, Kontrast, Laplace-Schärfe, Clipping und lokale Spiegelung. Die
-   Dokumenttypprüfung läuft mit selbst gehostetem Tesseract.js ohne zusätzlichen
-   OCR-Cloud-Dienst. Die Prüfung ist keine Echtheits-, Gültigkeits- oder
-   Lebenderkennung.
+   zusätzliche Dokumenttypprüfung läuft, wo erforderlich, mit selbst gehostetem
+   Tesseract.js ohne zusätzlichen OCR-Cloud-Dienst. Die Prüfung ist keine
+   Echtheits-, Gültigkeits- oder Lebenderkennung.
 6. Abgelehnte Aufnahmen bleiben mit einer verständlichen Meldung und
    **Neu aufnehmen** stehen; erst diese bewusste Auswahl öffnet die Kamera
    erneut. Angenommene Aufnahmen werden konservativ zugeschnitten und farblich
@@ -135,6 +134,15 @@ entsprechen dem verschlüsselten Apps-Script-Relay-Protokoll.
 8. Unterstützt der Kameratreiber `MediaTrackCapabilities.torch`, erscheint im
    Kamerabild ein Schalter für das Dauerlicht. Beim Verlassen, bei Fehlern und
    beim Stoppen der Kamera wird der Zustand zurückgesetzt.
+
+## Wiederaufnahme nach dem Neuladen
+
+Nach dem ersten erfolgreichen Verbindungsaufbau speichert der Browser nur einen
+kurzlebigen, an Station und Sitzung gebundenen Wiederaufnahme-Nachweis. Beim
+Neuladen oder erneuten Öffnen derselben QR-Adresse kann das Handy damit in die
+laufende Sitzung zurückkehren. Der Nachweis läuft spätestens mit der Sitzung ab
+und enthält weder Bilder noch OCR-Texte, entschlüsselte Schlüssel oder eine
+Upload-Berechtigung.
 
 ## Verschlüsselungsformat
 

@@ -85,9 +85,9 @@ test('standalone page contains a live camera guide without external code', async
   assert.match(html, /id="countdown"/);
   assert.match(html, /id="rotate-phone"/);
   assert.match(html, /Handy waagerecht drehen/);
-  assert.match(html, /bootstrap-hash\.js\?v=20261015-clean-url-v31/);
-  assert.match(html, /scanner\.js\?v=20261016-capture-portrait-v34/);
-  assert.match(html, /styles\.css\?v=20261016-capture-portrait-v34/);
+  assert.match(html, /bootstrap-hash\.js\?v=20261016-resume-v35/);
+  assert.match(html, /scanner\.js\?v=20261016-resume-v35/);
+  assert.match(html, /styles\.css\?v=20261016-resume-v35/);
   assert.match(html, /<title>Sicherheit Nord<\/title>/);
   assert.match(html, /<meta property="og:title" content="Sicherheit Nord" \/>/);
   const legacyRedirectPosition = html.indexOf('legacy-redirect.js');
@@ -252,18 +252,25 @@ test('standalone page contains a live camera guide without external code', async
   );
   assert.match(
     script,
-    /analyzeDocumentPresence\(image, \{[\s\S]+?slot: capturedSlot,[\s\S]+?\}\)/,
+    /function requiresPostCaptureDocumentChecks\(frozenCapture\)[\s\S]+?liveQualified !== true[\s\S]+?slot === 'tax-id'/,
   );
-  assert.match(script, /liveQualified: frozenCapture\.liveQualified === true/);
+  assert.match(
+    script,
+    /if \(runPostCaptureDocumentChecks\) \{[\s\S]+?analyzeDocumentPresence\(image, \{[\s\S]+?slot: capturedSlot,[\s\S]+?liveQualified: false/,
+  );
   assert.match(
     script,
     /function freezeGuidedVideoFrame\(\)[\s\S]+?liveQualified: shouldCaptureAutomatically\(\)/,
   );
   assert.match(script, /triggerCaptureFeedback\(\)/);
   const capturePreparation = script.indexOf('async function produceCapture');
+  const conditionalDocumentChecks = script.indexOf(
+    'if (runPostCaptureDocumentChecks)',
+    capturePreparation,
+  );
   const frozenGate = script.indexOf(
     'if (!documentPresence.accepted)',
-    capturePreparation,
+    conditionalDocumentChecks,
   );
   const frozenDocumentTypeGate = script.indexOf(
     'const recognition = await recognizeDocumentCanvas(canvas, capturedSlot)',
@@ -278,11 +285,12 @@ test('standalone page contains a live camera guide without external code', async
     capturePreparation,
   );
   assert.ok(
-    frozenGate >= 0 &&
+    conditionalDocumentChecks >= 0 &&
+      frozenGate > conditionalDocumentChecks &&
       frozenDocumentTypeGate > frozenGate &&
       rejectedDocumentTypeGate > frozenDocumentTypeGate &&
       jpegEncoding > rejectedDocumentTypeGate,
-    'the frozen frame must pass geometry and the selected document-type check before encoding',
+    'non-live and tax-ID fallbacks must pass geometry and document-type OCR before encoding',
   );
   assert.match(script, /if \(!recognition\.accepted\)/);
   const automaticCapture = script.indexOf(
@@ -395,7 +403,9 @@ test('standalone page contains a live camera guide without external code', async
   );
   assert.match(script, /else \{[\s\S]+?context\.drawImage\(/);
   assert.match(script, /drawPortraitCropAsLandscape\(/);
+  assert.match(script, /MAX_CAPTURE_LONG_EDGE = 2_000/);
   assert.match(script, /VIDEO_FALLBACK_OUTPUT_LONG_EDGE = 1_600/);
+  assert.match(script, /canvas\.toBlob\(resolve, 'image\/jpeg', 0\.91\)/);
   assert.match(script, /minimumSharpness: VIDEO_FALLBACK_MIN_SHARPNESS/);
   assert.match(script, /analyzeFramePosition/);
   assert.match(script, /analyzeCaptureQuality/);
@@ -405,16 +415,14 @@ test('standalone page contains a live camera guide without external code', async
   );
   assert.match(script, /prepareEncryptedCapture/);
   assert.match(script, /protocolVersion,/);
-  assert.match(script, /scanner-core\.js\?v=20261016-capture-portrait-v34/);
+  assert.match(script, /scanner-core\.js\?v=20261016-resume-v35/);
   assert.doesNotMatch(script, /document-recognizer-core\.js/);
-  assert.match(
-    script,
-    /document-recognizer\.js\?v=20261014-document-allowlist-v26/,
-  );
-  assert.match(script, /relay-client\.js\?v=20261015-compact-qr-v29/);
+  assert.match(script, /document-recognizer\.js\?v=20261016-resume-v35/);
+  assert.match(script, /relay-client\.js\?v=20261016-resume-v35/);
   assert.match(script, /recognizeDocumentCanvas\(canvas, capturedSlot\)/);
   assert.match(script, /recognizeDocumentCanvas\(canvas, 'tax-id'\)/);
   assert.match(script, /cancelDocumentRecognition/);
+  assert.doesNotMatch(script, /warmDocumentRecognizer/);
   assert.doesNotMatch(script, /resetLiveDocumentRecognition/);
   assert.match(
     script,
@@ -501,7 +509,7 @@ test('standalone page contains a live camera guide without external code', async
   assert.match(script, /showDashboard\(\)/);
   assert.match(
     script,
-    /parsedBootstrap\.version === '2'[\s\S]+?parsedBootstrap\.version === '4'[\s\S]+?documentSetVersion =\s*parsedBootstrap\.version === '3' \|\| parsedBootstrap\.version === '4'[\s\S]+?showDashboard\(\)[\s\S]+?await resolveScannerBootstrap\(parsedBootstrap\)/,
+    /parsedBootstrap\.version === '2'[\s\S]+?parsedBootstrap\.version === '4'[\s\S]+?documentSetVersion =\s*parsedBootstrap\.version === '3' \|\| parsedBootstrap\.version === '4'[\s\S]+?showDashboard\(\)[\s\S]+?await resolveScannerBootstrap\(parsedBootstrap, \{[\s\S]+?bootstrapHash,[\s\S]+?resumeCapsule/,
   );
   assert.match(
     script,
@@ -587,7 +595,7 @@ test('standalone page contains a live camera guide without external code', async
   );
   assert.match(
     script,
-    /function disposeSensitiveState\(\)[\s\S]+?clearCompletedCapturePreviews\(\)/,
+    /function disposeSensitiveState\(\{ clearResume = true \} = \{\}\)[\s\S]+?clearCompletedCapturePreviews\(\)[\s\S]+?if \(clearResume\) clearScannerResumeCapsule\(\)/,
   );
   assert.match(
     script,
@@ -654,6 +662,15 @@ test('standalone page contains a live camera guide without external code', async
     /visibilitychange[\s\S]+?Bitte Kamera erneut öffnen[\s\S]+?startCamera\.hidden = false/,
   );
   assert.match(script, /pagehide/);
+  assert.match(script, /pageshow/);
+  assert.match(
+    script,
+    /function handlePageHide\(event\)[\s\S]+?event\?\.persisted === true[\s\S]+?disposeSensitiveState\(\{ clearResume: false \}\)/,
+  );
+  assert.match(
+    script,
+    /function handlePageShow\(event\)[\s\S]+?event\?\.persisted !== true[\s\S]+?resumeOrRequestCamera\(\)/,
+  );
   assert.match(
     styles,
     /\.id-guide\s*\{[\s\S]*?aspect-ratio:\s*85\.6\s*\/\s*53\.98/,
@@ -793,20 +810,36 @@ test('standalone page contains a live camera guide without external code', async
   );
 });
 
-test('secure bootstrap fragment is hidden synchronously without breaking a legacy redirect', async () => {
+test('secure bootstrap fragment and TTL-bound resume capsule survive only the active static session', async () => {
   const bootstrapScript = await readFile(
     new URL('bootstrap-hash.js', directory),
     'utf8',
   );
-  const createWindow = ({ redirecting = false } = {}) => {
+  const stored = new Map();
+  const localStorage = {
+    getItem(key) {
+      return stored.get(key) ?? null;
+    },
+    removeItem(key) {
+      stored.delete(key);
+    },
+    setItem(key, value) {
+      stored.set(key, String(value));
+    },
+  };
+  const createWindow = ({
+    redirecting = false,
+    hash = '#vG0123456789ABCDEFGHIJ',
+  } = {}) => {
     const replacements = [];
     const location = {
-      hash: '#vG0123456789ABCDEFGHIJ',
+      hash,
       pathname: '/scan',
       search: '?source=qr',
     };
     const window = {
       location,
+      localStorage,
       history: {
         replaceState(_state, _title, url) {
           replacements.push(url);
@@ -826,6 +859,44 @@ test('secure bootstrap fragment is hidden synchronously without breaking a legac
   );
   assert.equal(canonical.location.hash, '');
   assert.deepEqual(canonical.replacements, ['/scan?source=qr']);
+  const resume = {
+    stationId: 'a'.repeat(64),
+    sessionId: '11111111-1111-4111-8111-111111111111',
+    phoneSession: 'P'.repeat(43),
+    bootstrapHash: '#vG0123456789ABCDEFGHIJ',
+    expiresAt: Date.now() + 10 * 60_000,
+  };
+  assert.equal(canonical.window.__SN_SCANNER_RESUME__.save(resume), true);
+  const serialized = JSON.parse(stored.get('sn-id-scanner.resume.v1'));
+  assert.deepEqual(Object.keys(serialized).sort(), [
+    'bootstrapHash',
+    'expiresAt',
+    'phoneSession',
+    'schemaVersion',
+    'sessionId',
+    'stationId',
+  ]);
+  assert.equal('image' in serialized, false);
+  assert.equal('bytes' in serialized, false);
+
+  const reloaded = createWindow({ hash: '' });
+  runInNewContext(bootstrapScript, { window: reloaded.window });
+  assert.equal(
+    reloaded.window.__SN_SCANNER_BOOTSTRAP_HASH__,
+    resume.bootstrapHash,
+  );
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(reloaded.window.__SN_SCANNER_RESUME__.load())),
+    { schemaVersion: 1, ...resume },
+  );
+  assert.deepEqual(reloaded.replacements, []);
+
+  serialized.expiresAt = Date.now() - 1;
+  stored.set('sn-id-scanner.resume.v1', JSON.stringify(serialized));
+  const expired = createWindow({ hash: '' });
+  runInNewContext(bootstrapScript, { window: expired.window });
+  assert.equal(expired.window.__SN_SCANNER_BOOTSTRAP_HASH__, undefined);
+  assert.equal(stored.has('sn-id-scanner.resume.v1'), false);
 
   const legacy = createWindow({ redirecting: true });
   runInNewContext(bootstrapScript, { window: legacy.window });
@@ -899,7 +970,7 @@ export function disposeDocumentRecognizer() { return Promise.resolve(); }
   const source = await readFile(scannerUrl, 'utf8');
   const instrumentedSource = source
     .replace(
-      "from './scanner-core.js?v=20261016-capture-portrait-v34';",
+      "from './scanner-core.js?v=20261016-resume-v35';",
       `from ${JSON.stringify(scannerCoreUrl)};`,
     )
     .replace(
@@ -907,11 +978,11 @@ export function disposeDocumentRecognizer() { return Promise.resolve(); }
       `from ${JSON.stringify(documentRecognizerCoreUrl)};`,
     )
     .replace(
-      "from './document-recognizer.js?v=20261014-document-allowlist-v26';",
+      "from './document-recognizer.js?v=20261016-resume-v35';",
       `from ${JSON.stringify(documentRecognizerStubUrl)};`,
     )
     .replace(
-      "from './relay-client.js?v=20261015-compact-qr-v29';",
+      "from './relay-client.js?v=20261016-resume-v35';",
       `from ${JSON.stringify(relayClientUrl)};`,
     )
     .replace(
@@ -932,11 +1003,14 @@ export {
   advanceAfterFinalizedDocumentSlot,
   backToDashboard,
   captureAutomatically,
+  handlePageHide,
+  handlePageShow,
   phoneViewportIsLandscape,
   requestCamera,
   requestLandscapeCameraPresentation,
   requestNaturalPresentation,
   requestPortraitPostCapturePresentation,
+  requiresPostCaptureDocumentChecks,
   resetTorchState,
   retryRejectedCapture,
   setTorch,
@@ -1035,6 +1109,8 @@ export function cameraLifecycleState() {
     cameraPromise: cameraRequest?.promise ?? null,
     mediaStream,
     hasCameraRequest: Boolean(cameraRequest),
+    pageCacheSuspended,
+    sessionClosed,
   };
 }
 export function prepareAutomaticCaptureLifecycleTest(stream) {
@@ -1252,6 +1328,7 @@ export function torchLifecycleState() {
   const hiddenCamera = deferred();
   const resumedCamera = deferred();
   const retryCamera = deferred();
+  const bfcacheCamera = deferred();
   const pendingCameras = [
     firstCamera,
     secondCamera,
@@ -1259,6 +1336,7 @@ export function torchLifecycleState() {
     hiddenCamera,
     resumedCamera,
     retryCamera,
+    bfcacheCamera,
   ];
   let getUserMediaCalls = 0;
   let animationFrameCalls = 0;
@@ -1372,6 +1450,30 @@ export function torchLifecycleState() {
 
     scanner = await import(
       `data:text/javascript;base64,${Buffer.from(instrumentedSource).toString('base64')}`
+    );
+    assert.equal(
+      scanner.requiresPostCaptureDocumentChecks({
+        slot: 'id-front',
+        liveQualified: true,
+      }),
+      false,
+      'a frame that held the green live gate must skip the redundant OCR hard gate',
+    );
+    assert.equal(
+      scanner.requiresPostCaptureDocumentChecks({
+        slot: 'id-front',
+        liveQualified: false,
+      }),
+      true,
+      'a non-live fallback must keep document presence and OCR checks',
+    );
+    assert.equal(
+      scanner.requiresPostCaptureDocumentChecks({
+        slot: 'tax-id',
+        liveQualified: true,
+      }),
+      true,
+      'the tax-ID path must keep OCR even after a live capture',
     );
     const firstStream = createStream();
     const secondStream = createStream();
@@ -1880,6 +1982,32 @@ export function torchLifecycleState() {
     );
     scanner.stopCamera();
     assert.equal(retryStream.track.stopCalls, 1);
+
+    const cachedStream = createStream();
+    scanner.prepareAutomaticCaptureLifecycleTest(cachedStream);
+    scanner.handlePageHide({ persisted: true });
+    assert.equal(cachedStream.track.stopCalls, 1);
+    assert.deepEqual(
+      {
+        pageCacheSuspended: scanner.cameraLifecycleState().pageCacheSuspended,
+        sessionClosed: scanner.cameraLifecycleState().sessionClosed,
+      },
+      { pageCacheSuspended: true, sessionClosed: false },
+      'BFCache suspension must stop the camera without destroying the live session',
+    );
+    scanner.handlePageShow({ persisted: true });
+    assert.equal(getUserMediaCalls, 7);
+    const cachedResumeResult = scanner.cameraLifecycleState().cameraPromise;
+    const cachedResumeStream = createStream();
+    bfcacheCamera.resolve(cachedResumeStream);
+    assert.equal(await cachedResumeResult, true);
+    assert.equal(scanner.cameraLifecycleState().pageCacheSuspended, false);
+    assert.equal(
+      scanner.cameraLifecycleState().mediaStream,
+      cachedResumeStream,
+    );
+    scanner.stopCamera();
+    assert.equal(cachedResumeStream.track.stopCalls, 1);
 
     await scanner.waitForPresentationQueue();
     scanner.preparePresentationRaceTest();

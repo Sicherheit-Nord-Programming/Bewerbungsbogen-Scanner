@@ -246,6 +246,47 @@ test('static station discovery polls only while waiting and returns the availabl
   ]);
 });
 
+test('static discovery sends the exact authenticated resume proof only when both fields are valid', async () => {
+  const stationId = 'b'.repeat(64);
+  const phoneSession = 'P'.repeat(43);
+  let observedRequest;
+  const result = await waitForStaticSession(
+    'https://script.google.com/macros/s/example/exec',
+    stationId,
+    {
+      resumeSessionId: SESSION_ID,
+      phoneSession,
+      fetchImpl: async (_url, options) => {
+        observedRequest = JSON.parse(options.body).request;
+        return Response.json({
+          schemaVersion: 1,
+          action: 'discover',
+          status: 'available',
+          sessionId: SESSION_ID,
+          expiresAt: 1_900_000_000_000,
+          bootstrapIvBase64url: 'A'.repeat(16),
+          bootstrapCiphertextBase64url: 'B'.repeat(64),
+        });
+      },
+    },
+  );
+  assert.equal(result.sessionId, SESSION_ID);
+  assert.deepEqual(observedRequest, {
+    stationId,
+    resumeSessionId: SESSION_ID,
+    phoneSession,
+  });
+
+  await assert.rejects(
+    waitForStaticSession(
+      'https://script.google.com/macros/s/example/exec',
+      stationId,
+      { resumeSessionId: SESSION_ID },
+    ),
+    /Wiederaufnahme-Nachweis/,
+  );
+});
+
 test('static bootstrap decrypts only with station, session and documents-v2 AAD', async () => {
   const stationId = 'a'.repeat(64);
   const pairingBytes = Uint8Array.from(
@@ -436,6 +477,27 @@ test('version-2 capture binds the document slot into the v2 header and AAD', asy
   assert.equal(header.side, 'passport-data');
   plaintext.fill(0);
   aad.fill(0);
+  disposePreparedCapture(prepared);
+});
+
+test('encrypted captures retain the 64 KiB client chunk ceiling required by Apps Script CacheService', async () => {
+  const key = await importCaptureKey(new Uint8Array(32));
+  const jpegBytes = new Uint8Array(180_000);
+  jpegBytes.fill(0x5a);
+  const prepared = await prepareEncryptedCapture({
+    key,
+    sessionId: SESSION_ID,
+    phoneSession: 'P'.repeat(43),
+    side: 'front',
+    jpegBytes,
+    width: 2_000,
+    height: 1_261,
+    capturedAt: '2026-10-16T10:00:00.000Z',
+    fixedIv: new Uint8Array(12),
+  });
+  assert.ok(prepared.chunks.length > 1);
+  assert.ok(prepared.chunks.every((chunk) => chunk.length <= 64 * 1024));
+  assert.equal(prepared.manifest.totalChunks, prepared.chunks.length);
   disposePreparedCapture(prepared);
 });
 

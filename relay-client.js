@@ -8,6 +8,7 @@ const STATIC_DISCOVERY_INTERVAL_MS = 1_500;
 const SESSION_PATTERN =
   /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
 const STATION_PATTERN = /^[a-f0-9]{64}$/;
+const CAPABILITY_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 const BASE64URL_PATTERN = /^[A-Za-z0-9_-]+$/;
 
 export class RelayError extends Error {
@@ -323,6 +324,8 @@ export async function waitForStaticSession(
     intervalMs = STATIC_DISCOVERY_INTERVAL_MS,
     waitImpl = discoveryWait,
     shouldContinue = () => true,
+    resumeSessionId = '',
+    phoneSession = '',
   } = {},
 ) {
   if (!STATION_PATTERN.test(stationId)) {
@@ -331,11 +334,22 @@ export async function waitForStaticSession(
   if (!Number.isFinite(intervalMs) || intervalMs < 0) {
     throw new TypeError('Das Abfrageintervall ist ungültig.');
   }
+  const hasResumeProof = Boolean(resumeSessionId || phoneSession);
+  if (
+    hasResumeProof &&
+    (!SESSION_PATTERN.test(resumeSessionId) ||
+      !CAPABILITY_PATTERN.test(phoneSession))
+  ) {
+    throw new TypeError('Der Wiederaufnahme-Nachweis ist ungültig.');
+  }
+  const discoveryRequest = hasResumeProof
+    ? { stationId, resumeSessionId, phoneSession }
+    : { stationId };
   while (shouldContinue()) {
     const response = await callRelayWithRecovery(
       endpoint,
       'discover',
-      { stationId },
+      discoveryRequest,
       {
         fetchImpl,
         timeoutMs,

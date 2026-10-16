@@ -21,13 +21,12 @@ import {
   portraitCaptureLayout,
   scannerDocumentsForVersion,
   updateHoldState,
-} from './scanner-core.js?v=20261016-capture-portrait-v34';
+} from './scanner-core.js?v=20261016-resume-v35';
 import {
   cancelDocumentRecognition,
   disposeDocumentRecognizer,
   recognizeDocumentCanvas,
-  warmDocumentRecognizer,
-} from './document-recognizer.js?v=20261014-document-allowlist-v26';
+} from './document-recognizer.js?v=20261016-resume-v35';
 import {
   callRelayWithRecovery,
   createPhoneSession,
@@ -40,12 +39,12 @@ import {
   RelayError,
   uploadChunksConcurrently,
   waitForStaticSession,
-} from './relay-client.js?v=20261015-compact-qr-v29';
+} from './relay-client.js?v=20261016-resume-v35';
 
 const MAX_FINALIZE_ATTEMPTS = 5;
 const LIVE_ANALYSIS_INTERVAL_MS = 145;
 const MAX_LIVE_ANALYSIS_EDGE = 480;
-const MAX_CAPTURE_LONG_EDGE = 2_400;
+const MAX_CAPTURE_LONG_EDGE = 2_000;
 const VIDEO_FALLBACK_MIN_LONG_EDGE = 640;
 const VIDEO_FALLBACK_MIN_SHORT_EDGE = 400;
 const VIDEO_FALLBACK_MIN_SHARPNESS = 12;
@@ -165,6 +164,7 @@ let cameraPresentationGeneration = 0;
 let cameraPresentationQueue = Promise.resolve(false);
 let requestedCameraPresentation = 'natural';
 let documentOpenPending = false;
+let pageCacheSuspended = false;
 let activeViewAnimation = null;
 let activeViewAnimationTarget = null;
 let previewReturnState = 'dashboard';
@@ -718,8 +718,43 @@ function hasCompletedDocumentPreview(documentDefinition) {
   );
 }
 
-function disposeSensitiveState() {
+function scannerResumeStore() {
+  const store = window.__SN_SCANNER_RESUME__;
+  return store &&
+    typeof store.load === 'function' &&
+    typeof store.save === 'function' &&
+    typeof store.clear === 'function'
+    ? store
+    : null;
+}
+
+function loadScannerResumeCapsule() {
+  try {
+    return scannerResumeStore()?.load() ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function saveScannerResumeCapsule(capsule) {
+  try {
+    return scannerResumeStore()?.save(capsule) === true;
+  } catch {
+    return false;
+  }
+}
+
+function clearScannerResumeCapsule() {
+  try {
+    scannerResumeStore()?.clear();
+  } catch {
+    // Resume support is best effort; the active in-memory session stays valid.
+  }
+}
+
+function disposeSensitiveState({ clearResume = true } = {}) {
   sessionClosed = true;
+  pageCacheSuspended = false;
   documentOpenPending = false;
   if (activeViewAnimation) activeViewAnimation.cancel();
   activeViewAnimation = null;
@@ -745,6 +780,7 @@ function disposeSensitiveState() {
   elements.captureCanvas.width = 0;
   elements.captureCanvas.height = 0;
   void disposeDocumentRecognizer();
+  if (clearResume) clearScannerResumeCapsule();
 }
 
 function fail(message) {
@@ -828,7 +864,6 @@ async function waitForVideoMetadata(video) {
 
 async function requestCamera() {
   if (sessionClosed) return false;
-  if (side !== 'tax-id') void warmDocumentRecognizer();
   if (mediaStream) {
     const liveTrack = mediaStream
       .getVideoTracks()
@@ -1293,7 +1328,7 @@ function retryRejectedCapture() {
 
 async function canvasToJpeg(canvas) {
   const blob = await new Promise((resolve) =>
-    canvas.toBlob(resolve, 'image/jpeg', 0.94),
+    canvas.toBlob(resolve, 'image/jpeg', 0.91),
   );
   if (!blob) throw new Error('Die Aufnahme konnte nicht verarbeitet werden.');
   return { blob, bytes: new Uint8Array(await blob.arrayBuffer()) };
@@ -1468,6 +1503,12 @@ async function normalizeTaxIdPhoto(file) {
   }
 }
 
+function requiresPostCaptureDocumentChecks(frozenCapture) {
+  return (
+    frozenCapture?.liveQualified !== true || frozenCapture?.slot === 'tax-id'
+  );
+}
+
 async function produceCapture(frozenCapture, capturedCameraGeneration) {
   // The frame and guide geometry were frozen synchronously at the 3–2–1
   // boundary, before the live stream was closed. All slower checks below use
@@ -1543,42 +1584,45 @@ async function produceCapture(frozenCapture, capturedCameraGeneration) {
       image.data.fill(0);
       return { quality: nativeQuality };
     }
-    const documentPresence = analyzeDocumentPresence(image, {
-      slot: capturedSlot,
-      // This exact frame already held the green live-document gate for three
-      // seconds. Do not reject it again with a stricter duplicate texture
-      // threshold; quality and document-type OCR still run below.
-      liveQualified: frozenCapture.liveQualified === true,
-    });
-    if (!documentPresence.accepted) {
-      image.data.fill(0);
-      return { quality: documentPresence };
+    const runPostCaptureDocumentChecks =
+      requiresPostCaptureDocumentChecks(frozenCapture);
+    if (runPostCaptureDocumentChecks) {
+      const documentPresence = analyzeDocumentPresence(image, {
+        slot: capturedSlot,
+        liveQualified: false,
+      });
+      if (!documentPresence.accepted) {
+        image.data.fill(0);
+        return { quality: documentPresence };
+      }
     }
     image.data.fill(0);
     image = null;
-    const recognition = await recognizeDocumentCanvas(canvas, capturedSlot);
-    if (
-      sessionClosed ||
-      state !== 'capturing' ||
-      side !== capturedSlot ||
-      cameraGeneration !== capturedCameraGeneration
-    ) {
-      return {
-        quality: {
-          accepted: false,
-          status: 'interrupted',
-          message: 'Die Aufnahme wurde unterbrochen. Bitte erneut versuchen.',
-        },
-      };
-    }
-    if (!recognition.accepted) {
-      return {
-        quality: {
-          accepted: false,
-          status: 'document-type',
-          message: documentRecognitionMessage(recognition),
-        },
-      };
+    if (runPostCaptureDocumentChecks) {
+      const recognition = await recognizeDocumentCanvas(canvas, capturedSlot);
+      if (
+        sessionClosed ||
+        state !== 'capturing' ||
+        side !== capturedSlot ||
+        cameraGeneration !== capturedCameraGeneration
+      ) {
+        return {
+          quality: {
+            accepted: false,
+            status: 'interrupted',
+            message: 'Die Aufnahme wurde unterbrochen. Bitte erneut versuchen.',
+          },
+        };
+      }
+      if (!recognition.accepted) {
+        return {
+          quality: {
+            accepted: false,
+            status: 'document-type',
+            message: documentRecognitionMessage(recognition),
+          },
+        };
+      }
     }
     const outputWidth =
       captureKind === 'video' && nativeWidth < VIDEO_FALLBACK_OUTPUT_LONG_EDGE
@@ -1620,10 +1664,13 @@ async function produceCapture(frozenCapture, capturedCameraGeneration) {
     context.putImageData(image, 0, 0);
     image.data.fill(0);
     image = null;
-    const finalImage = context.getImageData(0, 0, outputWidth, outputHeight);
-    const quality = analyzeCaptureQuality(finalImage);
-    finalImage.data.fill(0);
-    if (!quality.accepted) return { quality };
+    let quality = nativeQuality;
+    if (runPostCaptureDocumentChecks) {
+      const finalImage = context.getImageData(0, 0, outputWidth, outputHeight);
+      quality = analyzeCaptureQuality(finalImage);
+      finalImage.data.fill(0);
+      if (!quality.accepted) return { quality };
+    }
     const encoded = await canvasToJpeg(canvas);
     if (
       sessionClosed ||
@@ -2496,6 +2543,7 @@ function completeSession(returnToDashboard = false) {
   stopCamera();
   clearCaptureProcessing();
   void disposeDocumentRecognizer();
+  clearScannerResumeCapsule();
   clearTimeout(expiryTimer);
   expiryTimer = 0;
   clearRetryPayload();
@@ -2535,8 +2583,12 @@ function completeSession(returnToDashboard = false) {
   elements.complete.focus({ preventScroll: true });
 }
 
-async function resolveScannerBootstrap(initialBootstrap) {
+async function resolveScannerBootstrap(
+  initialBootstrap,
+  { bootstrapHash = '', resumeCapsule = null } = {},
+) {
   if (initialBootstrap.version !== '3' && initialBootstrap.version !== '4') {
+    if (resumeCapsule) clearScannerResumeCapsule();
     return initialBootstrap;
   }
 
@@ -2551,12 +2603,25 @@ async function resolveScannerBootstrap(initialBootstrap) {
           ),
         };
   const { stationId, pairingKey } = staticPairing;
+  let matchingResume =
+    resumeCapsule?.stationId === stationId ? resumeCapsule : null;
+  if (resumeCapsule && !matchingResume) clearScannerResumeCapsule();
   let discovered;
   let decrypted;
   try {
     discovered = await waitForStaticSession(staticEndpoint, stationId, {
       shouldContinue: () => !sessionClosed,
+      ...(matchingResume
+        ? {
+            resumeSessionId: matchingResume.sessionId,
+            phoneSession: matchingResume.phoneSession,
+          }
+        : {}),
     });
+    if (matchingResume && discovered.sessionId !== matchingResume.sessionId) {
+      clearScannerResumeCapsule();
+      matchingResume = null;
+    }
     decrypted = await decryptStaticBootstrap({
       key: pairingKey,
       stationId,
@@ -2564,10 +2629,19 @@ async function resolveScannerBootstrap(initialBootstrap) {
       bootstrapIvBase64url: discovered.bootstrapIvBase64url,
       bootstrapCiphertextBase64url: discovered.bootstrapCiphertextBase64url,
     });
-    return parseDiscoveredScannerBootstrap(decrypted, {
+    const parsed = parseDiscoveredScannerBootstrap(decrypted, {
       sessionId: discovered.sessionId,
       endpoint: staticEndpoint,
     });
+    return {
+      ...parsed,
+      resumeContext: {
+        stationId,
+        phoneSession: matchingResume?.phoneSession || '',
+        bootstrapHash,
+        expiresAt: discovered.expiresAt,
+      },
+    };
   } finally {
     if (discovered) {
       discovered.bootstrapIvBase64url = '';
@@ -2603,36 +2677,51 @@ function takeScannerBootstrapHash() {
 async function start() {
   try {
     let bootstrapHash = takeScannerBootstrapHash();
+    let resumeCapsule = loadScannerResumeCapsule();
     if (!window.isSecureContext || !window.crypto?.subtle) {
       bootstrapHash = '';
+      resumeCapsule = null;
       throw new Error(
         'Dieser Browser unterstützt die sichere Kameraerfassung nicht.',
       );
     }
     let parsedBootstrap;
+    let bootstrap;
     try {
       parsedBootstrap = parseScannerBootstrap(bootstrapHash);
+      if (
+        parsedBootstrap.version !== '3' &&
+        parsedBootstrap.version !== '4' &&
+        resumeCapsule
+      ) {
+        clearScannerResumeCapsule();
+        resumeCapsule = null;
+      }
+      if (
+        parsedBootstrap.version === '2' ||
+        parsedBootstrap.version === '3' ||
+        parsedBootstrap.version === '4'
+      ) {
+        // The document index is useful immediately and does not depend on relay
+        // data. Keep the secure discovery/claim in the background so a permanent
+        // QR never strands the applicant on a loading screen while the laptop is
+        // still publishing its current session.
+        protocolVersion = '2';
+        captureMode = 'documents-v2';
+        documentSetVersion =
+          parsedBootstrap.version === '3' || parsedBootstrap.version === '4'
+            ? 3
+            : 2;
+        showDashboard();
+      }
+      bootstrap = await resolveScannerBootstrap(parsedBootstrap, {
+        bootstrapHash,
+        resumeCapsule,
+      });
     } finally {
       bootstrapHash = '';
+      resumeCapsule = null;
     }
-    if (
-      parsedBootstrap.version === '2' ||
-      parsedBootstrap.version === '3' ||
-      parsedBootstrap.version === '4'
-    ) {
-      // The document index is useful immediately and does not depend on relay
-      // data. Keep the secure discovery/claim in the background so a permanent
-      // QR never strands the applicant on a loading screen while the laptop is
-      // still publishing its current session.
-      protocolVersion = '2';
-      captureMode = 'documents-v2';
-      documentSetVersion =
-        parsedBootstrap.version === '3' || parsedBootstrap.version === '4'
-          ? 3
-          : 2;
-      showDashboard();
-    }
-    const bootstrap = await resolveScannerBootstrap(parsedBootstrap);
     sessionId = bootstrap.sessionId;
     endpoint = bootstrap.endpoint;
     protocolVersion = bootstrap.version;
@@ -2641,7 +2730,17 @@ async function start() {
       protocolVersion === '2' && bootstrap.documentSetVersion === 3 ? 3 : 2;
     if (protocolVersion === '2') renderDashboard();
     side = 'front';
-    phoneSession = createPhoneSession();
+    const resumeContext = bootstrap.resumeContext ?? null;
+    phoneSession = resumeContext?.phoneSession || createPhoneSession();
+    if (resumeContext) {
+      saveScannerResumeCapsule({
+        stationId: resumeContext.stationId,
+        sessionId,
+        phoneSession,
+        bootstrapHash: resumeContext.bootstrapHash,
+        expiresAt: resumeContext.expiresAt,
+      });
+    }
     let cameraAttempt = Promise.resolve(false);
     if (protocolVersion === '1') {
       elements.loading.hidden = true;
@@ -2702,6 +2801,17 @@ async function start() {
       for (const slot of claimed.slotsReceived) completedSlots.add(slot);
     }
     scheduleExpiry(claimed.expiresAt);
+    if (resumeContext) {
+      saveScannerResumeCapsule({
+        stationId: resumeContext.stationId,
+        sessionId,
+        phoneSession,
+        bootstrapHash: resumeContext.bootstrapHash,
+        expiresAt: claimed.expiresAt,
+      });
+      resumeContext.bootstrapHash = '';
+      resumeContext.phoneSession = '';
+    }
     sessionClaimed = true;
     elements.app.setAttribute('aria-busy', 'false');
     if (protocolVersion === '2') {
@@ -2754,6 +2864,44 @@ function endButtonPress(linger = true) {
     pressedButtonTimer = 0;
     button.classList.remove('is-pressing');
   }, 110);
+}
+
+function handlePageHide(event) {
+  endButtonPress(false);
+  if (event?.persisted === true) {
+    pageCacheSuspended = true;
+    if (mediaStream || cameraRequest) {
+      stopCamera({ cancelRecognition: state !== 'capturing' });
+    }
+    return;
+  }
+  // A normal reload/navigation gets a fresh module instance. Remove only the
+  // in-memory material here; the origin-scoped, TTL-bound resume capsule stays
+  // available so the same authenticated phone session can be reclaimed.
+  disposeSensitiveState({ clearResume: false });
+}
+
+function handlePageShow(event) {
+  if (event?.persisted !== true || sessionClosed) return;
+  pageCacheSuspended = false;
+  if (state === 'scanning') {
+    setGuide(false);
+    setCameraMessage(
+      'Kamera wird geöffnet …',
+      'Bitte das Dokument bereithalten.',
+    );
+    resumeOrRequestCamera();
+    return;
+  }
+  if (
+    state === 'capturing' ||
+    state === 'capture-rejected' ||
+    state === 'review'
+  ) {
+    void requestPortraitPostCapturePresentation();
+    return;
+  }
+  void requestNaturalPresentation();
 }
 
 elements.startCamera.addEventListener('click', () => void requestCamera());
@@ -2862,14 +3010,16 @@ window.visualViewport?.addEventListener(
   'resize',
   schedulePhoneOrientationRefresh,
 );
-window.addEventListener('pagehide', disposeSensitiveState, { once: true });
+window.addEventListener('pagehide', handlePageHide);
+window.addEventListener('pageshow', handlePageShow);
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden') {
     if (mediaStream || cameraRequest) stopCamera();
-    void disposeDocumentRecognizer();
+    if (state !== 'capturing') void disposeDocumentRecognizer();
     return;
   }
   if (
+    !pageCacheSuspended &&
     !sessionClosed &&
     sessionClaimed &&
     state === 'scanning' &&
