@@ -21,7 +21,7 @@ import {
   portraitCaptureLayout,
   scannerDocumentsForVersion,
   updateHoldState,
-} from './scanner-core.js?v=20261016-resume-v35';
+} from './scanner-core.js?v=20261017-id-back-glare-v38';
 import {
   cancelDocumentRecognition,
   disposeDocumentRecognizer,
@@ -1572,16 +1572,17 @@ async function produceCapture(frozenCapture, capturedCameraGeneration) {
     // frame before OCR so a 4K source does not stay resident during recognition.
     still.close();
     image = context.getImageData(0, 0, nativeWidth, nativeHeight);
-    const nativeQuality = analyzeCaptureQuality(
-      image,
-      captureKind === 'video'
+    const tolerateLocalizedSecurityReflection = capturedSlot === 'id-back';
+    const nativeQuality = analyzeCaptureQuality(image, {
+      ...(captureKind === 'video'
         ? {
             minimumLongEdge: VIDEO_FALLBACK_MIN_LONG_EDGE,
             minimumShortEdge: VIDEO_FALLBACK_MIN_SHORT_EDGE,
             minimumSharpness: VIDEO_FALLBACK_MIN_SHARPNESS,
           }
-        : undefined,
-    );
+        : {}),
+      tolerateLocalizedSecurityReflection,
+    });
     if (!nativeQuality.accepted) {
       image.data.fill(0);
       return { quality: nativeQuality };
@@ -1669,7 +1670,9 @@ async function produceCapture(frozenCapture, capturedCameraGeneration) {
     let quality = nativeQuality;
     if (runPostCaptureDocumentChecks) {
       const finalImage = context.getImageData(0, 0, outputWidth, outputHeight);
-      quality = analyzeCaptureQuality(finalImage);
+      quality = analyzeCaptureQuality(finalImage, {
+        tolerateLocalizedSecurityReflection,
+      });
       finalImage.data.fill(0);
       if (!quality.accepted) return { quality };
     }

@@ -29,6 +29,11 @@ const MIN_CONTRAST = 22;
 const MIN_LAPLACIAN_SHARPNESS = 9;
 const MAX_GLARE_TILE = 0.68;
 const MIN_GLOBAL_GLARE_SUPPORT = 0.012;
+const MAX_SECURITY_STRIP_GLARE_SUPPORT = 0.12;
+const MIN_SECURITY_STRIP_COMPONENT_SHARE = 0.55;
+const MIN_SECURITY_STRIP_ASPECT_RATIO = 4;
+const MIN_SECURITY_STRIP_MAJOR_EXTENT = 0.35;
+const MAX_SECURITY_STRIP_MINOR_EXTENT = 0.14;
 
 const SESSION_PATTERN =
   /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
@@ -1708,6 +1713,103 @@ function calculateQualityMetrics(image, grayscale) {
   };
 }
 
+function resemblesLocalizedSecurityStrip(grayscale, clippedLightRatio) {
+  if (
+    clippedLightRatio <= MIN_GLOBAL_GLARE_SUPPORT ||
+    clippedLightRatio > MAX_SECURITY_STRIP_GLARE_SUPPORT
+  ) {
+    return false;
+  }
+  const insetX = Math.max(1, Math.floor(grayscale.width * 0.02));
+  const insetY = Math.max(1, Math.floor(grayscale.height * 0.02));
+  const mask = new Uint8Array(grayscale.width * grayscale.height);
+  let totalClippedLight = 0;
+  for (let y = insetY; y < grayscale.height - insetY; y += 1) {
+    for (let x = insetX; x < grayscale.width - insetX; x += 1) {
+      const index = y * grayscale.width + x;
+      if (grayscale.data[index] < 250) continue;
+      mask[index] = 1;
+      totalClippedLight += 1;
+    }
+  }
+  if (totalClippedLight === 0) return false;
+
+  const queue = new Int32Array(mask.length);
+  let largest = null;
+  for (let start = 0; start < mask.length; start += 1) {
+    if (mask[start] !== 1) continue;
+    let read = 0;
+    let write = 0;
+    let count = 0;
+    let sumX = 0;
+    let sumY = 0;
+    let sumXX = 0;
+    let sumYY = 0;
+    let sumXY = 0;
+    queue[write] = start;
+    write += 1;
+    mask[start] = 2;
+    while (read < write) {
+      const index = queue[read];
+      read += 1;
+      const y = Math.floor(index / grayscale.width);
+      const x = index - y * grayscale.width;
+      const normalizedX = (x + 0.5) / grayscale.width;
+      const normalizedY = (y + 0.5) / grayscale.height;
+      count += 1;
+      sumX += normalizedX;
+      sumY += normalizedY;
+      sumXX += normalizedX * normalizedX;
+      sumYY += normalizedY * normalizedY;
+      sumXY += normalizedX * normalizedY;
+      for (let offsetY = -1; offsetY <= 1; offsetY += 1) {
+        const neighborY = y + offsetY;
+        if (neighborY < insetY || neighborY >= grayscale.height - insetY) {
+          continue;
+        }
+        for (let offsetX = -1; offsetX <= 1; offsetX += 1) {
+          if (offsetX === 0 && offsetY === 0) continue;
+          const neighborX = x + offsetX;
+          if (neighborX < insetX || neighborX >= grayscale.width - insetX) {
+            continue;
+          }
+          const neighborIndex = neighborY * grayscale.width + neighborX;
+          if (mask[neighborIndex] !== 1) continue;
+          mask[neighborIndex] = 2;
+          queue[write] = neighborIndex;
+          write += 1;
+        }
+      }
+    }
+    if (!largest || count > largest.count) {
+      largest = { count, sumX, sumY, sumXX, sumYY, sumXY };
+    }
+  }
+  mask.fill(0);
+  if (!largest || largest.count < 2) return false;
+
+  const meanX = largest.sumX / largest.count;
+  const meanY = largest.sumY / largest.count;
+  const varianceX = Math.max(0, largest.sumXX / largest.count - meanX * meanX);
+  const varianceY = Math.max(0, largest.sumYY / largest.count - meanY * meanY);
+  const covariance = largest.sumXY / largest.count - meanX * meanY;
+  const halfTrace = (varianceX + varianceY) / 2;
+  const eigenDistance = Math.sqrt(
+    ((varianceX - varianceY) / 2) ** 2 + covariance ** 2,
+  );
+  const majorExtent = Math.sqrt(Math.max(0, halfTrace + eigenDistance) * 12);
+  const minorExtent = Math.sqrt(Math.max(0, halfTrace - eigenDistance) * 12);
+  const aspectRatio =
+    majorExtent /
+    Math.max(minorExtent, 1 / Math.max(grayscale.width, grayscale.height));
+  return (
+    largest.count / totalClippedLight >= MIN_SECURITY_STRIP_COMPONENT_SHARE &&
+    aspectRatio >= MIN_SECURITY_STRIP_ASPECT_RATIO &&
+    majorExtent >= MIN_SECURITY_STRIP_MAJOR_EXTENT &&
+    minorExtent <= MAX_SECURITY_STRIP_MINOR_EXTENT
+  );
+}
+
 function qualityResult(status, message, metrics) {
   return { accepted: status === 'accepted', status, message, metrics };
 }
@@ -1719,11 +1821,19 @@ export function analyzeCaptureQuality(
     minimumLongEdge = CAPTURE_MIN_LONG_EDGE,
     minimumShortEdge = CAPTURE_MIN_SHORT_EDGE,
     minimumSharpness = MIN_LAPLACIAN_SHARPNESS,
+    tolerateLocalizedSecurityReflection = false,
   } = {},
 ) {
   assertImageShape(image);
   const grayscale = grayscaleGrid(image);
   const metrics = calculateQualityMetrics(image, grayscale);
+  const localizedGlare =
+    metrics.clippedLight > MIN_GLOBAL_GLARE_SUPPORT &&
+    metrics.glare > MAX_GLARE_TILE;
+  const toleratedSecurityStrip =
+    tolerateLocalizedSecurityReflection &&
+    localizedGlare &&
+    resemblesLocalizedSecurityStrip(grayscale, metrics.clippedLight);
   grayscale.data.fill(0);
   if (
     metrics.longEdge < minimumLongEdge ||
@@ -1758,8 +1868,7 @@ export function analyzeCaptureQuality(
   }
   if (
     metrics.clippedLight > MAX_CLIPPED_LIGHT ||
-    (metrics.clippedLight > MIN_GLOBAL_GLARE_SUPPORT &&
-      metrics.glare > MAX_GLARE_TILE)
+    (localizedGlare && !toleratedSecurityStrip)
   ) {
     return qualityResult(
       'glare',

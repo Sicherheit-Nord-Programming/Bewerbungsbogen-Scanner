@@ -443,6 +443,55 @@ function sharpCapture(width = 1_400, height = 900) {
   return { data, width, height };
 }
 
+function addVerticalClippedReflection(image, widthRatio) {
+  const reflectionWidth = Math.max(1, Math.round(image.width * widthRatio));
+  const left = Math.floor(image.width * 0.25);
+  const right = Math.min(image.width, left + reflectionWidth);
+  for (let y = 0; y < image.height; y += 1) {
+    for (let x = left; x < right; x += 1) {
+      const offset = (y * image.width + x) * 4;
+      image.data[offset] = 255;
+      image.data[offset + 1] = 255;
+      image.data[offset + 2] = 255;
+    }
+  }
+  return image;
+}
+
+function addHorizontalClippedReflection(image, heightRatio) {
+  const reflectionHeight = Math.max(1, Math.round(image.height * heightRatio));
+  const top = Math.floor(image.height * 0.25);
+  const bottom = Math.min(image.height, top + reflectionHeight);
+  for (let y = top; y < bottom; y += 1) {
+    for (let x = 0; x < image.width; x += 1) {
+      const offset = (y * image.width + x) * 4;
+      image.data[offset] = 255;
+      image.data[offset + 1] = 255;
+      image.data[offset + 2] = 255;
+    }
+  }
+  return image;
+}
+
+function addClippedReflectionBox(
+  image,
+  { leftRatio, rightRatio, topRatio, bottomRatio },
+) {
+  const left = Math.floor(image.width * leftRatio);
+  const right = Math.ceil(image.width * rightRatio);
+  const top = Math.floor(image.height * topRatio);
+  const bottom = Math.ceil(image.height * bottomRatio);
+  for (let y = top; y < bottom; y += 1) {
+    for (let x = left; x < right; x += 1) {
+      const offset = (y * image.width + x) * 4;
+      image.data[offset] = 255;
+      image.data[offset + 1] = 255;
+      image.data[offset + 2] = 255;
+    }
+  }
+  return image;
+}
+
 test('parses one-use and exact static QR fragments only for the fixed Apps Script endpoint', () => {
   const parsed = parseScannerBootstrap(qrFragment());
   assert.equal(parsed.version, '1');
@@ -1216,6 +1265,62 @@ test('browser quality gate matches desktop resolution and sharpness thresholds',
   });
   assert.equal(blurry.accepted, false);
   assert.equal(blurry.status, 'sharpness');
+});
+
+test('ID back tolerates its local security-strip reflection but not broad glare', () => {
+  const securityStrip = addVerticalClippedReflection(sharpCapture(), 0.1);
+  const strictResult = analyzeCaptureQuality(securityStrip);
+  assert.equal(strictResult.status, 'glare');
+  assert.ok(strictResult.metrics.clippedLight < 0.16);
+
+  const backResult = analyzeCaptureQuality(securityStrip, {
+    tolerateLocalizedSecurityReflection: true,
+  });
+  assert.equal(backResult.accepted, true);
+
+  const horizontalStrip = analyzeCaptureQuality(
+    addHorizontalClippedReflection(sharpCapture(), 0.1),
+    { tolerateLocalizedSecurityReflection: true },
+  );
+  assert.equal(horizontalStrip.accepted, true);
+
+  const moderatelyWideGlare = analyzeCaptureQuality(
+    addVerticalClippedReflection(sharpCapture(), 0.13),
+    { tolerateLocalizedSecurityReflection: true },
+  );
+  assert.equal(moderatelyWideGlare.status, 'glare');
+  assert.ok(moderatelyWideGlare.metrics.clippedLight < 0.16);
+
+  const wideLongGlare = analyzeCaptureQuality(
+    addClippedReflectionBox(sharpCapture(), {
+      leftRatio: 0.2,
+      rightRatio: 0.35,
+      topRatio: 0.15,
+      bottomRatio: 0.85,
+    }),
+    { tolerateLocalizedSecurityReflection: true },
+  );
+  assert.equal(wideLongGlare.status, 'glare');
+  assert.ok(wideLongGlare.metrics.clippedLight < 0.16);
+
+  const broadGlare = analyzeCaptureQuality(
+    addVerticalClippedReflection(sharpCapture(), 0.18),
+    { tolerateLocalizedSecurityReflection: true },
+  );
+  assert.equal(broadGlare.status, 'glare');
+  assert.ok(broadGlare.metrics.clippedLight > 0.16);
+
+  const compactGlare = analyzeCaptureQuality(
+    addClippedReflectionBox(sharpCapture(), {
+      leftRatio: 0.18,
+      rightRatio: 0.42,
+      topRatio: 0.18,
+      bottomRatio: 0.42,
+    }),
+    { tolerateLocalizedSecurityReflection: true },
+  );
+  assert.equal(compactGlare.status, 'glare');
+  assert.ok(compactGlare.metrics.clippedLight < 0.16);
 });
 
 test('sharp 720p guide crops may pass native preflight before final upscale', () => {
