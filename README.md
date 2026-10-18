@@ -118,6 +118,11 @@ entsprechen dem verschlüsselten Apps-Script-Relay-Protokoll.
    erhalten.
 5. Die technische Prüfung entspricht den Desktop-Grenzwerten für Auflösung,
    Helligkeit, Kontrast, Laplace-Schärfe, Clipping und lokale Spiegelung. Die
+   reflektierende Sicherheitsfolie auf der Personalausweis-Rückseite darf dabei
+   eine begrenzte lokale Spiegelung erzeugen: Sie führt mit einem sichtbaren
+   Lesbarkeitshinweis in die Vorschau, während großflächige Überstrahlung
+   weiterhin abgelehnt wird. Die Entscheidung, ob alle Angaben trotz des
+   Reflexes lesbar sind, bleibt in dieser Vorschau ausdrücklich beim Nutzer. Die
    zusätzliche Dokumenttypprüfung läuft, wo erforderlich, mit selbst gehostetem
    Tesseract.js ohne zusätzlichen OCR-Cloud-Dienst. Die Prüfung ist keine
    Echtheits-, Gültigkeits- oder Lebenderkennung.

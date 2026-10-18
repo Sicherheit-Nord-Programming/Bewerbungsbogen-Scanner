@@ -492,6 +492,27 @@ function addClippedReflectionBox(
   return image;
 }
 
+function addFragmentedClippedReflection(image) {
+  const segmentWidth = Math.max(1, Math.round(image.width * 0.09));
+  const left = Math.floor(image.width * 0.27);
+  const segmentHeight = Math.max(1, Math.round(image.height * 0.13));
+  const gap = Math.max(1, Math.round(image.height * 0.035));
+  const top = Math.floor(image.height * 0.08);
+  for (let segment = 0; segment < 5; segment += 1) {
+    const segmentTop = top + segment * (segmentHeight + gap);
+    const segmentBottom = Math.min(image.height, segmentTop + segmentHeight);
+    for (let y = segmentTop; y < segmentBottom; y += 1) {
+      for (let x = left; x < left + segmentWidth; x += 1) {
+        const offset = (y * image.width + x) * 4;
+        image.data[offset] = 255;
+        image.data[offset + 1] = 255;
+        image.data[offset + 2] = 255;
+      }
+    }
+  }
+  return image;
+}
+
 test('parses one-use and exact static QR fragments only for the fixed Apps Script endpoint', () => {
   const parsed = parseScannerBootstrap(qrFragment());
   assert.equal(parsed.version, '1');
@@ -1267,7 +1288,7 @@ test('browser quality gate matches desktop resolution and sharpness thresholds',
   assert.equal(blurry.status, 'sharpness');
 });
 
-test('ID back tolerates its local security-strip reflection but not broad glare', () => {
+test('ID back sends bounded glare to readability review but still rejects broad washout', () => {
   const securityStrip = addVerticalClippedReflection(sharpCapture(), 0.1);
   const strictResult = analyzeCaptureQuality(securityStrip);
   assert.equal(strictResult.status, 'glare');
@@ -1288,7 +1309,9 @@ test('ID back tolerates its local security-strip reflection but not broad glare'
     addVerticalClippedReflection(sharpCapture(), 0.13),
     { tolerateLocalizedSecurityReflection: true },
   );
-  assert.equal(moderatelyWideGlare.status, 'glare');
+  assert.equal(moderatelyWideGlare.accepted, true);
+  assert.equal(moderatelyWideGlare.status, 'accepted-with-glare');
+  assert.match(moderatelyWideGlare.message, /Vorschau/);
   assert.ok(moderatelyWideGlare.metrics.clippedLight < 0.16);
 
   const wideLongGlare = analyzeCaptureQuality(
@@ -1300,7 +1323,8 @@ test('ID back tolerates its local security-strip reflection but not broad glare'
     }),
     { tolerateLocalizedSecurityReflection: true },
   );
-  assert.equal(wideLongGlare.status, 'glare');
+  assert.equal(wideLongGlare.accepted, true);
+  assert.equal(wideLongGlare.status, 'accepted-with-glare');
   assert.ok(wideLongGlare.metrics.clippedLight < 0.16);
 
   const broadGlare = analyzeCaptureQuality(
@@ -1319,8 +1343,22 @@ test('ID back tolerates its local security-strip reflection but not broad glare'
     }),
     { tolerateLocalizedSecurityReflection: true },
   );
-  assert.equal(compactGlare.status, 'glare');
+  assert.equal(compactGlare.accepted, true);
+  assert.equal(compactGlare.status, 'accepted-with-glare');
   assert.ok(compactGlare.metrics.clippedLight < 0.16);
+
+  const fragmentedFoilGlare = analyzeCaptureQuality(
+    addFragmentedClippedReflection(sharpCapture()),
+    { tolerateLocalizedSecurityReflection: true },
+  );
+  assert.equal(fragmentedFoilGlare.accepted, true);
+  assert.equal(fragmentedFoilGlare.status, 'accepted-with-glare');
+
+  const sameFragmentedGlareOnAnotherSide = analyzeCaptureQuality(
+    addFragmentedClippedReflection(sharpCapture()),
+  );
+  assert.equal(sameFragmentedGlareOnAnotherSide.accepted, false);
+  assert.equal(sameFragmentedGlareOnAnotherSide.status, 'glare');
 });
 
 test('sharp 720p guide crops may pass native preflight before final upscale', () => {

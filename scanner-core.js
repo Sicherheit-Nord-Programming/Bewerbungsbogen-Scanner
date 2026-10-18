@@ -1811,7 +1811,12 @@ function resemblesLocalizedSecurityStrip(grayscale, clippedLightRatio) {
 }
 
 function qualityResult(status, message, metrics) {
-  return { accepted: status === 'accepted', status, message, metrics };
+  return {
+    accepted: status === 'accepted' || status === 'accepted-with-glare',
+    status,
+    message,
+    metrics,
+  };
 }
 
 /** Mirrors lib/mobile-id-capture-quality.ts for browser-side early rejection. */
@@ -1834,6 +1839,14 @@ export function analyzeCaptureQuality(
     tolerateLocalizedSecurityReflection &&
     localizedGlare &&
     resemblesLocalizedSecurityStrip(grayscale, metrics.clippedLight);
+  // The rear-side security foil creates fragmented torch highlights in real
+  // captures. Geometry alone cannot tell those apart from hidden text. Keep
+  // global washout blocking, but let bounded rear-side glare reach the human
+  // preview with a warning instead of rejecting a readable document.
+  const localizedGlareForReview =
+    tolerateLocalizedSecurityReflection &&
+    localizedGlare &&
+    metrics.clippedLight <= MAX_CLIPPED_LIGHT;
   grayscale.data.fill(0);
   if (
     metrics.longEdge < minimumLongEdge ||
@@ -1868,11 +1881,11 @@ export function analyzeCaptureQuality(
   }
   if (
     metrics.clippedLight > MAX_CLIPPED_LIGHT ||
-    (localizedGlare && !toleratedSecurityStrip)
+    (localizedGlare && !localizedGlareForReview)
   ) {
     return qualityResult(
       'glare',
-      'Starke Spiegelung erkannt. Bitte den Winkel leicht ändern.',
+      'Die Spiegelung verdeckt zu große Bereiche. Bitte den Winkel oder das Licht leicht ändern.',
       metrics,
     );
   }
@@ -1887,6 +1900,13 @@ export function analyzeCaptureQuality(
     return qualityResult(
       'sharpness',
       'Die Aufnahme ist unscharf. Bitte ruhig halten und fokussieren.',
+      metrics,
+    );
+  }
+  if (localizedGlareForReview && !toleratedSecurityStrip) {
+    return qualityResult(
+      'accepted-with-glare',
+      'Spiegelung erkannt. Bitte in der Vorschau prüfen, ob alle Angaben vollständig lesbar sind.',
       metrics,
     );
   }

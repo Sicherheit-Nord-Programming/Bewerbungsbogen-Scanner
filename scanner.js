@@ -21,7 +21,7 @@ import {
   portraitCaptureLayout,
   scannerDocumentsForVersion,
   updateHoldState,
-} from './scanner-core.js?v=20261017-id-back-glare-v38';
+} from './scanner-core.js?v=20261018-readable-glare-v39';
 import {
   cancelDocumentRecognition,
   disposeDocumentRecognizer,
@@ -2176,7 +2176,12 @@ async function captureAutomatically() {
       );
       return;
     }
-    showCaptureReview(result, 'Angaben lesbar – Dokumentenkopie bestätigen.');
+    showCaptureReview(
+      result,
+      result.quality.status === 'accepted-with-glare'
+        ? result.quality.message
+        : 'Angaben lesbar – Dokumentenkopie bestätigen.',
+    );
   } catch (error) {
     if (sessionClosed || state !== 'capturing') return;
     if (!captureConfirmed) {

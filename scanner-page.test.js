@@ -86,7 +86,7 @@ test('standalone page contains a live camera guide without external code', async
   assert.match(html, /id="rotate-phone"/);
   assert.match(html, /Handy waagerecht drehen/);
   assert.match(html, /bootstrap-hash\.js\?v=20261016-resume-v35/);
-  assert.match(html, /scanner\.js\?v=20261017-id-back-glare-v38/);
+  assert.match(html, /scanner\.js\?v=20261018-readable-glare-v39/);
   assert.match(html, /styles\.css\?v=20261016-review-spacing-v36/);
   assert.match(html, /<title>Sicherheit Nord<\/title>/);
   assert.match(html, /<meta property="og:title" content="Sicherheit Nord" \/>/);
@@ -435,7 +435,11 @@ test('standalone page contains a live camera guide without external code', async
   );
   assert.match(script, /prepareEncryptedCapture/);
   assert.match(script, /protocolVersion,/);
-  assert.match(script, /scanner-core\.js\?v=20261017-id-back-glare-v38/);
+  assert.match(script, /scanner-core\.js\?v=20261018-readable-glare-v39/);
+  assert.match(
+    script,
+    /result\.quality\.status === 'accepted-with-glare'[\s\S]+?result\.quality\.message/,
+  );
   assert.doesNotMatch(script, /document-recognizer-core\.js/);
   assert.match(script, /document-recognizer\.js\?v=20261016-resume-v35/);
   assert.match(script, /relay-client\.js\?v=20261016-resume-v35/);
@@ -994,7 +998,7 @@ export function disposeDocumentRecognizer() { return Promise.resolve(); }
   const source = await readFile(scannerUrl, 'utf8');
   const instrumentedSource = source
     .replace(
-      "from './scanner-core.js?v=20261017-id-back-glare-v38';",
+      "from './scanner-core.js?v=20261018-readable-glare-v39';",
       `from ${JSON.stringify(scannerCoreUrl)};`,
     )
     .replace(
